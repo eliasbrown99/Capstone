@@ -79,6 +79,20 @@ Install Node.js dependencies:
 ```bash
 npm install
 ```
+### 4. Create the .env file
+
+Create a file named ```.env``` in the root directory ```Capstone``` of the project (the same one containing ```requirements.txt``` and ```SolicitationClassification.py```). You can do this manually or cd into the directory and use 
+
+```bash
+touch .env
+```
+Inside ```.env```, add your OpenAI API key (request it from Elias):
+
+```bash
+OPEN_API_KEY=sk-xxxxx
+MODEL_PATH=./models
+DATA_PATH=./data
+```
 
 ## Running the Applicatoins
 ### Start the FastAPI Backend
