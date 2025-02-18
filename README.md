@@ -70,7 +70,33 @@ With the virtual environment activated, run:
 ```bash
 pip install -r requirements.txt
 ```
-### 3. Set Up the React Frontend
+
+### 3. Install Node.js and Git
+
+#### For macOS:
+- **Node.js:**  
+  - Option 1: Download the latest LTS version from [nodejs.org](https://nodejs.org/) and follow the installer instructions.  
+  - Option 2: If you have Homebrew installed, run:
+    ```bash
+    brew install node
+    ```
+- **Git:**  
+  - Option 1: Download and install Git from [git-scm.com](https://git-scm.com/).  
+  - Option 2: If you have Homebrew installed, run:
+    ```bash
+    brew install git
+    ```
+
+#### For Windows:
+- **Node.js:**  
+  - Download the latest LTS version from [nodejs.org](https://nodejs.org/) and run the installer.
+- **Git:**  
+  - Download the installer from [git-scm.com](https://git-scm.com/download/win) and follow the installation instructions.
+
+
+
+
+### 4. Set Up the React Frontend
 Navigate to the frontend directory:
 ```bash
 cd solicitation-frontend
@@ -79,7 +105,7 @@ Install Node.js dependencies:
 ```bash
 npm install
 ```
-### 4. Create the .env file
+### 5. Create the .env file
 
 Create a file named ```.env``` in the root directory ```Capstone``` of the project (the same one containing ```requirements.txt``` and ```SolicitationClassification.py```). You can do this manually or cd into the directory and use 
 
