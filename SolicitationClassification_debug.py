@@ -9,6 +9,7 @@ from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import os
 import re
+import logging
 from pathlib import Path
 from typing import List, Dict, Union
 
@@ -17,16 +18,34 @@ from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Load environment variables
+# For verbose HTTP-level logging from httpx (used by OpenAI's library)
+import httpx
+httpx_logger = logging.getLogger("httpx")
+httpx_logger.setLevel(logging.DEBUG)
+
+###############################################################################
+# 1. Configure logging
+###############################################################################
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+###############################################################################
+# 2. Load .env & Debug
+###############################################################################
+logger.debug("Loading .env file...")
 load_dotenv()
 
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError(
-        "OPENAI_API_KEY environment variable is not set. Please set it in your .env file.")
+        "OPENAI_API_KEY environment variable is not set. Please set it in your .env file."
+    )
+masked_key = api_key[:5] + "..." if api_key else None
+logger.debug(f"OPENAI_API_KEY found (masked): {masked_key}")
 
 ###############################################################################
-# Pydantic Model (response schema)
+# 3. Pydantic Model (response schema)
 ###############################################################################
 
 
@@ -40,8 +59,9 @@ class SolicitationClassification(BaseModel):
 
 
 ###############################################################################
-# Criteria and Evaluation Schema
+# 4. Criteria, etc.
 ###############################################################################
+
 
 # A dictionary that defines:
 # Core Keywords: 'testing' and 'software' listing phrases that signal relevance
@@ -80,6 +100,7 @@ ACATO_CRITERIA = {
     ]
 }
 
+
 # A JSON schema outlining properties (each with type and descrption) that the evaluation chainn must address
 EVALUATION_SCHEMA = {
     "properties": {
@@ -114,8 +135,9 @@ EVALUATION_SCHEMA = {
 }
 
 ###############################################################################
-# Summarization Prompt + Single-Chunk Summaries
+# 5. Summarization Prompt + Single-Chunk Summaries
 ###############################################################################
+
 
 # A prompt template is defined that instructs the gpt to summarize a given chunck of texst, focusing on only essential details
 SUMMARY_PROMPT = PromptTemplate(
@@ -135,25 +157,24 @@ Return a concise summary highlighting only essential details.
 def create_summarization_chain(openai_api_key: str) -> LLMChain:
     """Builds a chain that summarizes a single text chunk."""
     llm = ChatOpenAI(
-        model_name="gpt-3.5-turbo",  # or "gpt-4" if preferred for summarization
+        model_name="gpt-3.5-turbo",  # or "gpt-4" if you prefer for summarization
         temperature=0.0,
         openai_api_key=openai_api_key
     )
     return LLMChain(llm=llm, prompt=SUMMARY_PROMPT)
 
 ###############################################################################
-# Filtering Step
+# 6. Filtering Step
 ###############################################################################
+
 
 # This function receives a chunk, converts it to lowercase, and checks if 'core_keywords' appear in the chunk,
 # if core_capabilities appear in the chunk, and if any 'exclusions' appear in the chunk.
 # Returns True if any match is found, otherwise False
-
-
 def chunk_is_relevant_or_exclusion(chunk: str) -> bool:
     """
     Returns True if the chunk mentions any of Acato's core keywords/capabilities,
-    or if it mentions any exclusion text. Otherwise False.
+    or if it mentions any exclusion text. Otherwise False (skip it).
     """
     clower = chunk.lower()
 
@@ -176,7 +197,7 @@ def chunk_is_relevant_or_exclusion(chunk: str) -> bool:
     return False
 
 ###############################################################################
-# Hierarchical Summarization Utility
+# 7. Hierarchical Summarization Utility
 ###############################################################################
 
 # Hanndles cases where the document is too large to summarize in one go
@@ -197,18 +218,19 @@ async def hierarchical_summarize(
     Summarize a list of text chunks in multiple passes if necessary, so no single
     request is too large for GPT.
 
-    1) Group chunks into batches of ~max_batch_chars.
-    2) Summarize each batch to produce partial summaries.
-    3) If more than one partial summary is produced, repeat until a single summary
-       remains or pass_limit is reached.
+    1) Group chunks into ~max_batch_chars each.
+    2) Summarize each batch => partial summaries.
+    3) If we produce >1 partial summary, repeat until we're down to 1 or pass_limit is reached.
 
-    Return the final summary.
+    Return the final summary (string).
     """
     current_list = text_list
     pass_count = 0
 
     while len(current_list) > 1 and pass_count < pass_limit:
         pass_count += 1
+        logging.debug(
+            f"[hierarchical_summarize] Pass #{pass_count}, input items: {len(current_list)}")
 
         batch_summaries = []
         buffer = []
@@ -217,6 +239,7 @@ async def hierarchical_summarize(
         for chunk in current_list:
             chunk_len = len(chunk)
             if buffer and (buffer_size + chunk_len > max_batch_chars):
+                # Summarize the current buffer
                 buffer_text = "\n\n".join(buffer)
                 summary = await summarization_chain.arun({"chunk_text": buffer_text})
                 batch_summaries.append(summary.strip())
@@ -226,11 +249,14 @@ async def hierarchical_summarize(
                 buffer.append(chunk)
                 buffer_size += chunk_len
 
+        # Leftover buffer
         if buffer:
             buffer_text = "\n\n".join(buffer)
             summary = await summarization_chain.arun({"chunk_text": buffer_text})
             batch_summaries.append(summary.strip())
 
+        logging.debug(
+            f"[hierarchical_summarize] pass #{pass_count} => partial summaries: {len(batch_summaries)}")
         current_list = batch_summaries
 
     if len(current_list) == 1:
@@ -240,37 +266,51 @@ async def hierarchical_summarize(
         return "\n\n".join(current_list)
 
 ###############################################################################
-# SolicitationService with Multi-Pass Summarization + "Sole Exclusion" Logic
+# 8. SolicitationService with Multi-Pass Summarization + "Sole Exclusion" Logic
 ###############################################################################
 
 
 class SolicitationService:
     def __init__(self):
-        debug_api_key = api_key
+        logger.debug("Initializing SolicitationService...")
 
-        # LLM for evaluation & classification (using GPT-4)
+        # Reuse the globally loaded API key
+        debug_api_key = api_key
+        logger.debug(
+            f"[SolicitationService] ENV KEY (masked): {debug_api_key[:5]}...")
+
+        # 8.1. LLM for evaluation & classification
+        logger.debug(
+            "Creating ChatOpenAI instance for evaluation/classification (GPT-4)...")
         self.llm = ChatOpenAI(
-            model_name="gpt-4",
+            model_name="gpt-4",  # The final classification uses GPT-4
             temperature=0.1,
             openai_api_key=debug_api_key
         )
+        logger.debug("ChatOpenAI instance created.")
 
-        # Text splitter setup
+        # 8.2. Text splitter
+        logger.debug("Setting up RecursiveCharacterTextSplitter...")
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200
         )
 
-        # Summarization chain for chunk-level summaries
+        # 8.3. Summarization chain (for chunk-level)
+        logger.debug(
+            "Creating summarization chain for chunk-level summaries...")
         self.summarization_chain = create_summarization_chain(debug_api_key)
 
-        # Evaluation (tagging) chain
+        # 8.4. Create the evaluation chain (tagging)
+        logger.debug("Creating tagging chain (evaluation_chain)...")
         self.evaluation_chain = create_tagging_chain(
             EVALUATION_SCHEMA,
             self.llm
         )
 
-        # Classification chain with custom prompt
+        # 8.5. Create the final classification chain (stuff documents chain)
+        logger.debug(
+            "Creating classification chain with create_stuff_documents_chain...")
         classification_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(
                 """You are an expert at evaluating solicitations for Acato, a software testing and quality assurance company.
@@ -310,8 +350,12 @@ Provide your classification with detailed reasoning."""
             document_variable_name="text"
         )
 
+        logger.debug(
+            "SolicitationService initialized with hierarchical summarization + updated exclusion logic.")
+
     def analyze_keywords(self, text: str) -> Dict[str, List[str]]:
         """Analyze keyword matches in the text."""
+        logger.debug("Analyzing keywords in text...")
         matches = {}
         for category, keywords in ACATO_CRITERIA["core_keywords"].items():
             found = []
@@ -322,35 +366,54 @@ Provide your classification with detailed reasoning."""
                     found.append(match.group())
             if found:
                 matches[category] = found
+        logger.debug(f"Keyword analysis found matches: {matches}")
         return matches
 
     async def load_document(self, file: UploadFile) -> List[str]:
-        """
-        Load and process a document file, returning a list of text chunks.
-        Supports PDF and Word documents.
-        """
+        """Load and process a document file, returning a list of text chunks."""
+        logger.debug(f"load_document called with file: {file.filename}")
         temp_path = Path(f"/tmp/{file.filename}")
 
         try:
+            # Save file
+            logger.debug(f"Saving upload to {temp_path}...")
             with temp_path.open("wb") as f:
                 content = await file.read()
                 f.write(content)
+            logger.debug("File saved successfully.")
 
+            # Detect file type
             if file.filename.endswith('.pdf'):
+                logger.debug(
+                    f"Detected PDF. Loading {temp_path} with PyPDFLoader...")
                 loader = PyPDFLoader(str(temp_path))
             elif file.filename.endswith(('.doc', '.docx')):
+                logger.debug(
+                    f"Detected Word doc. Loading {temp_path} with UnstructuredWordDocumentLoader...")
                 loader = UnstructuredWordDocumentLoader(str(temp_path))
             else:
+                logger.error("Unsupported file type attempted.")
                 raise HTTPException(
                     status_code=400, detail="Unsupported file type")
 
+            # Load & split
+            logger.debug("Loading the file via the chosen loader...")
             docs = loader.load()
+            logger.debug(f"Loaded docs: {docs}")
+            logger.debug("Splitting documents...")
             splits = self.text_splitter.split_documents(docs)
+            logger.debug(f"Number of chunks: {len(splits)}")
+
+            # Convert each split to raw text
             text_chunks = [d.page_content for d in splits]
+            logger.debug(f"Generated {len(text_chunks)} text chunks.")
+
             temp_path.unlink()
+            logger.debug("Temp file deleted.")
             return text_chunks
 
         except Exception as e:
+            logger.error(f"Error loading document: {e}")
             if temp_path.exists():
                 temp_path.unlink()
             raise HTTPException(
@@ -360,109 +423,155 @@ Provide your classification with detailed reasoning."""
 
     async def classify_solicitation(self, documents: List[str]) -> Dict[str, Union[str, float, List[str], Dict]]:
         """
-        Multi-step logic with chunk filtering, hierarchical summarization,
+        Multi-step logic with chunk filtering + hierarchical summarization,
         and "sole exclusion" logic:
 
         1) Filter out chunks that mention no relevant or exclusion terms.
-        2) If no chunks are kept, check if the document is solely about an exclusion.
-        3) If relevant chunks exist, hierarchically summarize them.
-        4) Evaluate the summary and perform final classification.
+        2) If none kept => check if doc is solely about an exclusion. If so => "bad_fit".
+        3) If we keep some => hierarchical summarize them in multiple passes.
+        4) Evaluate chain + classification chain on final summary.
+        5) Do full-text keyword analysis + gather exclusion flags, but only treat
+           them as "bad_fit" if the doc has no relevant chunks (solely about exclusion).
         """
-        full_text = "\n".join(documents)
+        logger.debug("classify_solicitation called.")
+        try:
+            # (A) Full text for global analysis
+            full_text = "\n".join(documents)
+            logger.debug(f"Full text length: {len(full_text)}")
 
-        filtered_docs = []
-        for chunk_str in documents:
-            if chunk_is_relevant_or_exclusion(chunk_str):
-                filtered_docs.append(chunk_str)
+            # (B) Filter out irrelevant chunks
+            logger.debug("Filtering chunks for relevant or exclusion terms...")
+            filtered_docs = []
+            for i, chunk_str in enumerate(documents, start=1):
+                if chunk_is_relevant_or_exclusion(chunk_str):
+                    filtered_docs.append(chunk_str)
+                else:
+                    logger.debug(
+                        f"Skipping chunk {i}/{len(documents)} - no relevant/exclusion keywords.")
 
-        if not filtered_docs:
-            found_exclusion = any(exc.lower() in full_text.lower()
-                                  for exc in ACATO_CRITERIA["exclusions"])
+            logger.debug(
+                f"Kept {len(filtered_docs)} chunks out of {len(documents)} total.")
 
-            if found_exclusion:
-                return {
-                    "classification": "bad_fit",
-                    "confidence": 0.85,
-                    "reasoning": "Document is solely about exclusion criteria; no relevant testing content.",
-                    "keyword_matches": {},
-                    "scope_analysis": {
-                        "has_testing_focus": False,
-                        "full_scope_delivery": False,
-                        "requires_partners": False,
-                        "matches_past_work": False,
-                        "contains_exclusions": True
-                    },
-                    "exclusion_flags": [exc for exc in ACATO_CRITERIA["exclusions"] if exc.lower() in full_text.lower()]
-                }
+            # (C) Check if we have zero kept chunks
+            if not filtered_docs:
+                logger.debug(
+                    "No relevant chunks found. Checking if doc mentions an exclusion at all.")
+                found_exclusion = any(exc.lower() in full_text.lower()
+                                      for exc in ACATO_CRITERIA["exclusions"])
+
+                if found_exclusion:
+                    logger.debug(
+                        "Doc is solely about an exclusion. Marking as bad_fit.")
+                    return {
+                        "classification": "bad_fit",
+                        "confidence": 0.85,
+                        "reasoning": "Document is solely about exclusion criteria; no relevant testing content.",
+                        "keyword_matches": {},
+                        "scope_analysis": {
+                            "has_testing_focus": False,
+                            "full_scope_delivery": False,
+                            "requires_partners": False,
+                            "matches_past_work": False,
+                            "contains_exclusions": True
+                        },
+                        "exclusion_flags": [exc for exc in ACATO_CRITERIA["exclusions"] if exc.lower() in full_text.lower()]
+                    }
+                else:
+                    logger.debug(
+                        "Doc has no relevant content nor any recognized exclusions => bad_fit.")
+                    return {
+                        "classification": "bad_fit",
+                        "confidence": 0.85,
+                        "reasoning": "Document has no relevant or exclusion content, so no scope for Acato.",
+                        "keyword_matches": {},
+                        "scope_analysis": {
+                            "has_testing_focus": False,
+                            "full_scope_delivery": False,
+                            "requires_partners": False,
+                            "matches_past_work": False,
+                            "contains_exclusions": False
+                        },
+                        "exclusion_flags": []
+                    }
+
+            # (D) We have some relevant or exclusion chunks => Summarize them in multiple passes
+            logger.debug("Using hierarchical summarization on kept chunks...")
+            final_summary = await hierarchical_summarize(
+                filtered_docs,
+                self.summarization_chain,
+                max_batch_chars=3000,
+                pass_limit=5
+            )
+            logger.debug(
+                f"Final summary length after multi-pass: {len(final_summary)}")
+
+            # (E) Analyze keywords on full original text
+            keyword_matches = self.analyze_keywords(full_text)
+
+            # Gather exclusion flags (for reference)
+            exclusion_flags = [exclusion for exclusion in ACATO_CRITERIA["exclusions"]
+                               if exclusion.lower() in full_text.lower()]
+
+            # (F) Evaluate chain with final_summary
+            logger.debug(
+                "Invoking evaluation_chain on final_summary (just for logging).")
+            evaluation_results = await self.evaluation_chain.ainvoke({"input": final_summary})
+            logger.debug(f"evaluation_results: {evaluation_results}")
+
+            # (G) classification_chain with final_summary
+            doc_objects = [Document(page_content=final_summary)]
+            logger.debug("Invoking classification_chain on final_summary doc.")
+            classification_result = await self.classification_chain.ainvoke({
+                "text": doc_objects,
+                "core_capabilities": ", ".join(ACATO_CRITERIA["core_capabilities"]),
+                "evaluation_results": str(evaluation_results),
+                "keyword_matches": str(keyword_matches)
+            })
+            logger.debug(f"classification_result: {classification_result}")
+
+            # (H) Parse final GPT text
+            classification_str = classification_result.lower()
+            if "needs partners" in classification_str:
+                classification = "needs_partners"
+            elif "good_fit" in classification_str:
+                classification = "good_fit"
+            elif "bad_fit" in classification_str:
+                classification = "bad_fit"
             else:
-                return {
-                    "classification": "bad_fit",
-                    "confidence": 0.85,
-                    "reasoning": "Document has no relevant or exclusion content, so no scope for Acato.",
-                    "keyword_matches": {},
-                    "scope_analysis": {
-                        "has_testing_focus": False,
-                        "full_scope_delivery": False,
-                        "requires_partners": False,
-                        "matches_past_work": False,
-                        "contains_exclusions": False
-                    },
-                    "exclusion_flags": []
-                }
+                classification = "bad_fit"
 
-        final_summary = await hierarchical_summarize(
-            filtered_docs,
-            self.summarization_chain,
-            max_batch_chars=3000,
-            pass_limit=5
-        )
+            logger.debug(f"Classification from GPT: {classification}")
 
-        keyword_matches = self.analyze_keywords(full_text)
+            # (I) Return a default scope_analysis to satisfy Pydantic
+            scope_analysis = {
+                "has_testing_focus": False,
+                "full_scope_delivery": False,
+                "requires_partners": False,
+                "matches_past_work": False,
+                "contains_exclusions": False
+            }
 
-        exclusion_flags = [exclusion for exclusion in ACATO_CRITERIA["exclusions"]
-                           if exclusion.lower() in full_text.lower()]
+            final_result = {
+                "classification": classification,
+                "confidence": 0.85,
+                "reasoning": classification_result,
+                "keyword_matches": keyword_matches,
+                "scope_analysis": scope_analysis,
+                "exclusion_flags": exclusion_flags
+            }
+            logger.debug(f"Final classification result: {final_result}")
+            return final_result
 
-        evaluation_results = await self.evaluation_chain.ainvoke({"input": final_summary})
-
-        doc_objects = [Document(page_content=final_summary)]
-        classification_result = await self.classification_chain.ainvoke({
-            "text": doc_objects,
-            "core_capabilities": ", ".join(ACATO_CRITERIA["core_capabilities"]),
-            "evaluation_results": str(evaluation_results),
-            "keyword_matches": str(keyword_matches)
-        })
-
-        classification_str = classification_result.lower()
-        if "needs partners" in classification_str:
-            classification = "needs_partners"
-        elif "good_fit" in classification_str:
-            classification = "good_fit"
-        elif "bad_fit" in classification_str:
-            classification = "bad_fit"
-        else:
-            classification = "bad_fit"
-
-        scope_analysis = {
-            "has_testing_focus": False,
-            "full_scope_delivery": False,
-            "requires_partners": False,
-            "matches_past_work": False,
-            "contains_exclusions": False
-        }
-
-        final_result = {
-            "classification": classification,
-            "confidence": 0.85,
-            "reasoning": classification_result,
-            "keyword_matches": keyword_matches,
-            "scope_analysis": scope_analysis,
-            "exclusion_flags": exclusion_flags
-        }
-        return final_result
+        except Exception as e:
+            logger.error(f"Error in classification: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Classification error: {str(e)}"
+            )
 
 
 ###############################################################################
-# FastAPI App
+# 9. FastAPI App
 ###############################################################################
 app = FastAPI()
 
@@ -479,10 +588,17 @@ solicitation_service = SolicitationService()
 
 @app.post("/classify/", response_model=SolicitationClassification)
 async def classify_document(file: UploadFile):
+    """Endpoint to classify an uploaded solicitation document using hierarchical summarization + updated exclusion logic:
+       'Exclusion criteria' only cause bad_fit if they are the sole topics."""
+    logger.debug(f"Received POST /classify/ with file: {file.filename}")
     documents = await solicitation_service.load_document(file)
+    logger.debug(
+        "Document load complete; now classifying with multi-step summarization & updated exclusion logic...")
     result = await solicitation_service.classify_solicitation(documents)
+    logger.debug("Classification complete; returning response...")
     return result
 
 if __name__ == "__main__":
     import uvicorn
+    logger.debug("Starting uvicorn on 0.0.0.0:8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
