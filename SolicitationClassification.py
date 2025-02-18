@@ -23,13 +23,6 @@ import httpx
 httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(logging.DEBUG)
 
-# LangChain + Summaries
-
-# If you have them installed via "langchain_community"
-
-# For classification
-
-
 ###############################################################################
 # 1. Configure logging
 ###############################################################################
@@ -48,7 +41,6 @@ if not api_key:
     raise ValueError(
         "OPENAI_API_KEY environment variable is not set. Please set it in your .env file."
     )
-
 masked_key = api_key[:5] + "..." if api_key else None
 logger.debug(f"OPENAI_API_KEY found (masked): {masked_key}")
 
@@ -234,7 +226,7 @@ async def hierarchical_summarize(
                 buffer.append(chunk)
                 buffer_size += chunk_len
 
-        # leftover buffer
+        # Leftover buffer
         if buffer:
             buffer_text = "\n\n".join(buffer)
             summary = await summarization_chain.arun({"chunk_text": buffer_text})
@@ -247,7 +239,7 @@ async def hierarchical_summarize(
     if len(current_list) == 1:
         return current_list[0]
     else:
-        # pass limit reached but still multiple partial summaries => just join them
+        # Pass limit reached but still multiple partial summaries => just join them
         return "\n\n".join(current_list)
 
 ###############################################################################
@@ -259,7 +251,8 @@ class SolicitationService:
     def __init__(self):
         logger.debug("Initializing SolicitationService...")
 
-        debug_api_key = os.getenv("OPENAI_API_KEY")
+        # Reuse the globally loaded API key
+        debug_api_key = api_key
         logger.debug(
             f"[SolicitationService] ENV KEY (masked): {debug_api_key[:5]}...")
 
@@ -285,7 +278,7 @@ class SolicitationService:
             "Creating summarization chain for chunk-level summaries...")
         self.summarization_chain = create_summarization_chain(debug_api_key)
 
-        # 8.4. Create the evaluation chain (tagging), though we'll ignore booleans
+        # 8.4. Create the evaluation chain (tagging)
         logger.debug("Creating tagging chain (evaluation_chain)...")
         self.evaluation_chain = create_tagging_chain(
             EVALUATION_SCHEMA,
@@ -299,32 +292,32 @@ class SolicitationService:
             SystemMessagePromptTemplate.from_template(
                 """You are an expert at evaluating solicitations for Acato, a software testing and quality assurance company.
 
-                Key Evaluation Criteria:
-                1. Testing Focus: Look for keywords like "testing", "quality assurance", "QA" in proper context
-                2. Scope Analysis: Focus on scope of work/tasks sections
-                3. Capability Match: Evaluate against Acato's core capabilities:
-                   {core_capabilities}
+Key Evaluation Criteria:
+1. Testing Focus: Look for keywords like "testing", "quality assurance", "QA" in proper context
+2. Scope Analysis: Focus on scope of work/tasks sections
+3. Capability Match: Evaluate against Acato's core capabilities:
+   {core_capabilities}
 
-                Exclusions (Automatic Bad Fit):
-                - Cyber security testing
-                - Hardware testing
-                - Pure software development
+Exclusions (Automatic Bad Fit):
+- Cyber security testing
+- Hardware testing
+- Pure software development
 
-                Classification Guidelines:
-                - "good_fit": Can independently deliver full scope, matches past work (12-18 months)
-                - "needs_partners": Can deliver portion of scope but needs partners
-                - "bad_fit": Cannot deliver full scope or contains exclusion criteria
+Classification Guidelines:
+- "good_fit": Can independently deliver full scope, matches past work (12-18 months)
+- "needs_partners": Can deliver portion of scope but needs partners
+- "bad_fit": Cannot deliver full scope or contains exclusion criteria
 
-                Evaluate based on keyword matches, scope analysis, and exclusion criteria."""
+Evaluate based on keyword matches, scope analysis, and exclusion criteria."""
             ),
             HumanMessagePromptTemplate.from_template(
                 """Solicitation Content: {text}
 
-                Evaluation Results: {evaluation_results}
+Evaluation Results: {evaluation_results}
 
-                Keyword Matches: {keyword_matches}
+Keyword Matches: {keyword_matches}
 
-                Provide your classification with detailed reasoning."""
+Provide your classification with detailed reasoning."""
             )
         ])
 
@@ -438,17 +431,12 @@ class SolicitationService:
 
             # (C) Check if we have zero kept chunks
             if not filtered_docs:
-                # Possibly the doc is "solely about an exclusion" or truly no relevant text?
                 logger.debug(
                     "No relevant chunks found. Checking if doc mentions an exclusion at all.")
-                found_exclusion = False
-                for exc in ACATO_CRITERIA["exclusions"]:
-                    if exc.lower() in full_text.lower():
-                        found_exclusion = True
-                        break
+                found_exclusion = any(exc.lower() in full_text.lower()
+                                      for exc in ACATO_CRITERIA["exclusions"])
 
                 if found_exclusion:
-                    # That means the doc is solely about an exclusion => bad_fit
                     logger.debug(
                         "Doc is solely about an exclusion. Marking as bad_fit.")
                     return {
@@ -466,7 +454,6 @@ class SolicitationService:
                         "exclusion_flags": [exc for exc in ACATO_CRITERIA["exclusions"] if exc.lower() in full_text.lower()]
                     }
                 else:
-                    # No relevant, no exclusion => also bad_fit
                     logger.debug(
                         "Doc has no relevant content nor any recognized exclusions => bad_fit.")
                     return {
@@ -489,7 +476,7 @@ class SolicitationService:
             final_summary = await hierarchical_summarize(
                 filtered_docs,
                 self.summarization_chain,
-                max_batch_chars=3000,  # batch each pass to ~3k chars
+                max_batch_chars=3000,
                 pass_limit=5
             )
             logger.debug(
@@ -499,10 +486,8 @@ class SolicitationService:
             keyword_matches = self.analyze_keywords(full_text)
 
             # Gather exclusion flags (for reference)
-            exclusion_flags = []
-            for exclusion in ACATO_CRITERIA["exclusions"]:
-                if exclusion.lower() in full_text.lower():
-                    exclusion_flags.append(exclusion)
+            exclusion_flags = [exclusion for exclusion in ACATO_CRITERIA["exclusions"]
+                               if exclusion.lower() in full_text.lower()]
 
             # (F) Evaluate chain with final_summary
             logger.debug(
@@ -511,8 +496,7 @@ class SolicitationService:
             logger.debug(f"evaluation_results: {evaluation_results}")
 
             # (G) classification_chain with final_summary
-            from langchain.schema import Document as LC_Document
-            doc_objects = [LC_Document(page_content=final_summary)]
+            doc_objects = [Document(page_content=final_summary)]
             logger.debug("Invoking classification_chain on final_summary doc.")
             classification_result = await self.classification_chain.ainvoke({
                 "text": doc_objects,
@@ -536,8 +520,6 @@ class SolicitationService:
             logger.debug(f"Classification from GPT: {classification}")
 
             # (I) Return a default scope_analysis to satisfy Pydantic
-            #     We do NOT automatically 'bad_fit' if there's mention of an exclusion
-            #     but we have relevant chunks too. GPT's final text is authoritative.
             scope_analysis = {
                 "has_testing_focus": False,
                 "full_scope_delivery": False,
@@ -583,14 +565,12 @@ solicitation_service = SolicitationService()
 
 @app.post("/classify/", response_model=SolicitationClassification)
 async def classify_document(file: UploadFile):
-    """Endpoint to classify an uploaded solicitation document using 
-       hierarchical summarization + filtering with updated exclusion logic:
+    """Endpoint to classify an uploaded solicitation document using hierarchical summarization + updated exclusion logic:
        'Exclusion criteria' only cause bad_fit if they are the sole topics."""
     logger.debug(f"Received POST /classify/ with file: {file.filename}")
     documents = await solicitation_service.load_document(file)
     logger.debug(
         "Document load complete; now classifying with multi-step summarization & updated exclusion logic...")
-
     result = await solicitation_service.classify_solicitation(documents)
     logger.debug("Classification complete; returning response...")
     return result
