@@ -1,92 +1,120 @@
-=====================================================
-                    Acato 2
-=====================================================
+# Acato 2
 
-Overview
---------
-A first attempt at assisting Acato Information Management (Acato) with designing a comprehensive software that assists their company with quickly and effectively assessing potential business leads from third parties who submit to Acato requests for information
-(RFI) or requests for proposal (RFP).
+This is a first try at a comprehensive solution to help Acato Information Management rapidly assess potential business leads from third parties submitting Requests for Information (RFI) or Requests for Proposal (RFP). This repository contains a FastAPI backend (Python) and a Next.js/React frontend.
 
-Requirements
-------------
-- **Python**: 3.11.8 (or higher I presume)
-- **Node.js/NPM**: [For running the React code]
-- See the `requirements.txt` file for Python dependencies.
+---
 
-Installation
-------------
-1. **Clone the Repository:**
-https://github.com/eliasbrown99/Capstone/
+## Overview
 
+- **Backend:** FastAPI (Python) for document classification and processing.
+- **Frontend:** Next.js/React for a user-friendly interface.
+- **Environment Management:** Python virtual environment (venv) for backend dependencies and Node.js for frontend packages.
 
-2. **Set Up the Python Environment:**
-- Create a virtual environment:
-  ```
-  python -m venv venv
-  ```
-- Activate the virtual environment:
-  - On Windows:
-    ```
-    venv\Scripts\activate
-    ```
-  - On macOS/Linux:
-    ```
-    source venv/bin/activate
-    ```
-- Install Python dependencies:
-  ```
-  pip install -r requirements.txt
-  ```
-3. **Set Up the React Environment:**
-- Navigate to the folder containing your React code (if it’s in a separate directory, e.g., `solicitation-frontend`):
-  ```
-  cd solicitation-frontend
-  ```
-- Install Node dependencies:
-  ```
-  npm install
-  ```
-- Start the React application (if applicable):
-  ```
-  npm run dev 
-  ```
-  This will start the server and allow you to access it in browser at some localhost:X000
+---
 
-Usage
------
-- **Running the Python Code:**
+## System Requirements
 
- Run `SolicitationClassification.py' in the virtual environment venv. All dependencies should be included. You might need to install some system-wide packages with brew install ___
- 
-- **Interacting with the React App:**
+### Backend (FastAPI)
+- **Python 3.11.8** (or higher)
+- **Pip** (Python package manager)
+- **Virtual Environment** (venv)
 
- cd solicitation-frontend while in the virtual environment venv. Make sure you've already run npm install to install dependencies from package.json. Then npm run dev will allow you to interact with frontend in browser
- 
-ctrl + c to keyboard stop the programs inside terminal
-you will need to open two terminals inside VSCode to run both scripts
+### Frontend (React/Next.js)
+- **Node.js** (LTS version recommended, e.g. Node 16 or Node 18)
+- **npm** (Node package manager)
 
-File Structure
---------------
+### Additional Tools (Both macOS and Windows)
+- **Git:** For cloning and managing the repository.
+
+---
+
+## Installation
+
+### 1. Clone the Repository
+
+Clone the repo to your local machine:
+
+```bash
+git clone https://github.com/eliasbrown99/Capstone.git
+cd Capstone
 ```
-├── app/
-│   └── ... (application logic / controllers / services)
-├── config/
-│   └── ... (configuration files)
-├── data/
-│   └── ... (data files / CSVs / seeds)
-├── models/
-│   └── ... (database models or ORM files)
-├── solicitation-frontend/
+### 2. Set Up the Python Environment
+
+__Create a Virtual Environment:__
+
+```bash
+python -m venv venv
+```
+__Activate the Virtual Environment:__
+
+* __macOS/Linux:__
+  ```bash
+  source venv/bin/activate
+  ```
+
+* __Windows (Command Prompt):__
+  ```cmd
+  venv\Scripts\activate
+  ```
+* __Windows (PowerShell):__
+  ```powershell
+  .\venv\Scripts\Activate.ps1
+  ```
+  *If you receive an execution policy error, run:*
+  ```powershell
+  Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+  ```
+__Install Python Dependencies:__
+
+With the virtual environment activated, run:
+```bash
+pip install -r requirements.txt
+```
+### 3. Set Up the React Frontend
+Navigate to the frontend directory:
+```bash
+cd solicitation-frontend
+```
+Install Node.js dependencies:
+```bash
+npm install
+```
+
+## Running the Applicatoins
+### Start the FastAPI Backend
+Ensure your virtual environment is activated, then start the backend:
+```bash
+python SolicitationClassification.py
+```
+or
+```bash
+uvicorn SolicitationClassification:app --reload
+```
+### Start the React Frontend
+Open a new terminal window (or tab), navigate to the ```solicitation-frontend``` folder,
+and run:
+```bash
+npm run dev
+```
+This starts the Next.js development server, which can be opened in web browser (http://localhost:3000).
+_Tip:_ Opening two terminal windows - one for the backend and one for the frontend will be useful.
+
+## File Structure
+```bash
+.
+├── app/                     # Application logic (controllers, services)
+├── config/                  # Configuration files
+├── data/                    # Data files (CSVs, seeds, etc.)
+├── models/                  # Database models or ORM files
+├── solicitation-frontend/   # React/Next.js frontend
 │   ├── components/
 │   │   ├── SolicitationDashboard.jsx
-│   │   └── modules/
-│   │       └── ... (reusable UI components / modules)
+│   │   └── modules/         # Reusable UI components/modules
 │   ├── pages/
 │   │   ├── _app.js
 │   │   ├── _document.js
 │   │   └── index.js
-│   ├── public/
-│   │   └── ... (static assets like images or icons)
+│   ├── public/              # Static assets (images, icons)
 │   ├── .eslintrc.json
 │   ├── .gitignore
 │   ├── .prettierrc
@@ -95,11 +123,35 @@ File Structure
 │   ├── postcss.config.mjs
 │   ├── README.md
 │   └── tailwind.config.mjs
-├── venv/
-│   └── ... (Python virtual environment)
-├── .env               (environment variables for Python/Node)
+├── venv/                    # Python virtual environment (local)
+├── .env                     # Environment variables for Python/Node
 ├── .gitattributes
 ├── .gitignore
-├── requirements.txt   (Python dependencies)
-└── SolicitationClassification.py  (example Python script)
+├── requirements.txt         # Python dependencies
+└── SolicitationClassification.py  # FastAPI application entry point
 ```
+## Usage
+* __Backend:__
+  * Run the FastAPI server using uvicorn or by running ```SolicitationClassification.py``` directly.
+  * Use the endpoints defined in ```SolicitationClassification.py```for document classifcation.
+
+* __Frontend:__
+  * Interact with the application via browser at http://localhost:3000.
+
+* __Stopping the Applications:__
+  * Press ```Ctrl + C``` in the terminal where the application is running.
+
+## Troubleshooting
+
+* __Virtual Environment Activation (Windows PowerShell):__
+
+    If you see an execution policy error, run:
+    ```powershell
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+    ```
+    and then activate your virtual environment again.
+    
+* __System Dependencies:__
+
+    Ensure that Python, Node.js, and Git are properly installed on your system
+
