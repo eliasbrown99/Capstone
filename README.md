@@ -16,7 +16,7 @@ Requirements
 Installation
 ------------
 1. **Clone the Repository:**
-
+https://github.com/eliasbrown99/Capstone/
 
 
 2. **Set Up the Python Environment:**
@@ -48,19 +48,20 @@ Installation
   ```
 - Start the React application (if applicable):
   ```
-  npm run dev (this will start the server and allow you to access it in browser at some localhost:X000)
+  npm run dev 
   ```
+  This will start the server and allow you to access it in browser at some localhost:X000
 
 Usage
 -----
 - **Running the Python Code:**
- ```
+
  Run `SolicitationClassification.py' in the virtual environment venv. All dependencies should be included. You might need to install some system-wide packages with brew install ___
- ```
+ 
 - **Interacting with the React App:**
- ```
+
  cd solicitation-frontend while in the virtual environment venv. Make sure you've already run npm install to install dependencies from package.json. Then npm run dev will allow you to interact with frontend in browser
- ```
+ 
 ctrl + c to keyboard stop the programs inside terminal
 you will need to open two terminals inside VSCode to run both scripts
 
