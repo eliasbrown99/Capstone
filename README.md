@@ -40,7 +40,7 @@ Installation
 3. **Set Up the React Environment:**
 - Navigate to the folder containing your React code (if it’s in a separate directory, e.g., `solicitation-frontend`):
   ```
-  cd react-app
+  cd solicitation-frontend
   ```
 - Install Node dependencies:
   ```
@@ -66,7 +66,7 @@ you will need to open two terminals inside VSCode to run both scripts
 
 File Structure
 --------------
-.
+```
 ├── app/
 │   └── ... (application logic / controllers / services)
 ├── config/
@@ -101,4 +101,4 @@ File Structure
 ├── .gitignore
 ├── requirements.txt   (Python dependencies)
 └── SolicitationClassification.py  (example Python script)
-
+```
