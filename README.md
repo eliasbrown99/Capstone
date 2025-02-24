@@ -124,7 +124,7 @@ DATA_PATH=./data
 ### Start the FastAPI Backend
 Ensure your virtual environment is activated, then start the backend:
 ```bash
-python SolicitationClassification.py
+python -m app.main
 ```
 or
 ```bash
