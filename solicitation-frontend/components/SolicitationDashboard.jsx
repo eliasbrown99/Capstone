@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+// Example icons from 'lucide-react' for styling
+import { Upload, AlertCircle } from 'lucide-react';
 
+// A simple loading bar that increments up to ~90% while waiting.
 const LoadingBar = () => {
     const [progress, setProgress] = useState(0);
 
     useEffect(() => {
         const interval = setInterval(() => {
-            setProgress(prev => {
-                if (prev >= 90) return 90; // Stop at 90% until complete
-                return prev + 2;
-            });
+            setProgress((prev) => (prev >= 90 ? 90 : prev + 2));
         }, 100);
-
         return () => clearInterval(interval);
     }, []);
 
@@ -28,22 +26,24 @@ const LoadingBar = () => {
 const SolicitationDashboard = () => {
     const [file, setFile] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState(null);
+    const [summaries, setSummaries] = useState([]);
     const [error, setError] = useState(null);
 
+    // Handle file selection
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
         if (selectedFile) {
             setFile(selectedFile);
             setError(null);
-            setResult(null);
+            setSummaries([]);
         }
     };
 
+    // Submit the file to the backend
     const handleSubmit = async (event) => {
         event.preventDefault();
         if (!file) {
-            setError('Please select a file to classify');
+            setError('Please select a file to summarize');
             return;
         }
 
@@ -54,47 +54,23 @@ const SolicitationDashboard = () => {
         formData.append('file', file);
 
         try {
-            const response = await fetch('http://localhost:8000/classify/', {
+            // Updated to the new endpoint for summarization
+            const response = await fetch('http://localhost:8000/summarize/', {
                 method: 'POST',
                 body: formData,
             });
 
             if (!response.ok) {
-                throw new Error('Classification failed');
+                throw new Error('Summarization failed');
             }
 
             const data = await response.json();
-            setResult(data);
+            // The backend returns something like { summaries: [ { heading: "", summary: "" }, ... ] }
+            setSummaries(data.summaries || []);
         } catch (err) {
             setError(err.message);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const getClassificationColor = (classification) => {
-        switch (classification) {
-            case 'good_fit':
-                return 'text-green-400';
-            case 'needs_partners':
-                return 'text-yellow-400';
-            case 'bad_fit':
-                return 'text-red-400';
-            default:
-                return 'text-gray-400';
-        }
-    };
-
-    const getClassificationIcon = (classification) => {
-        switch (classification) {
-            case 'good_fit':
-                return <CheckCircle className="w-5 h-5 text-green-400" />;
-            case 'needs_partners':
-                return <AlertCircle className="w-5 h-5 text-yellow-400" />;
-            case 'bad_fit':
-                return <XCircle className="w-5 h-5 text-red-400" />;
-            default:
-                return null;
         }
     };
 
@@ -103,11 +79,12 @@ const SolicitationDashboard = () => {
             <div className="container mx-auto p-6 max-w-4xl">
                 <div className="mb-8">
                     <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text">
-                        Solicitation Classifier
+                        Solicitation Summarizer
                     </h1>
-                    <p className="text-gray-400">Upload a solicitation document (PDF or Word) for classification</p>
+                    <p className="text-gray-400">Upload a document (PDF/Word) to generate a section-based summary.</p>
                 </div>
 
+                {/* File upload & submission form */}
                 <div className="mb-8">
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="border-2 border-dashed border-gray-700 rounded-lg p-8 text-center bg-gray-800/50 hover:bg-gray-800 transition-colors">
@@ -118,10 +95,7 @@ const SolicitationDashboard = () => {
                                 className="hidden"
                                 id="file-upload"
                             />
-                            <label
-                                htmlFor="file-upload"
-                                className="cursor-pointer flex flex-col items-center justify-center"
-                            >
+                            <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center justify-center">
                                 <Upload className="w-16 h-16 text-blue-400 mb-4" />
                                 <span className="text-gray-400">
                                     {file ? file.name : 'Click to upload or drag and drop'}
@@ -129,19 +103,22 @@ const SolicitationDashboard = () => {
                             </label>
                         </div>
 
+                        {/* Loading bar appears while waiting for the server */}
                         {loading && <LoadingBar />}
+
                         <button
                             type="submit"
                             disabled={loading || !file}
                             className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg hover:bg-blue-600 
-                       disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed 
-                       transition-colors font-medium"
+                         disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed 
+                         transition-colors font-medium"
                         >
-                            {loading ? 'Analyzing...' : 'Classify Solicitation'}
+                            {loading ? 'Summarizing...' : 'Summarize Document'}
                         </button>
                     </form>
                 </div>
 
+                {/* Error display */}
                 {error && (
                     <div className="bg-red-900/50 border-l-4 border-red-500 p-4 mb-6 rounded-r-lg">
                         <div className="flex items-center">
@@ -151,61 +128,29 @@ const SolicitationDashboard = () => {
                     </div>
                 )}
 
-                {result && (
+                {/* Summaries result */}
+                {summaries.length > 0 && (
                     <div className="bg-gray-800 rounded-lg shadow-xl p-6 space-y-6">
-                        <div className="flex items-center justify-between border-b border-gray-700 pb-4">
-                            <div className="flex items-center space-x-2">
-                                {getClassificationIcon(result.classification)}
-                                <h2 className={`text-xl font-semibold ${getClassificationColor(result.classification)}`}>
-                                    {result.classification.replace('_', ' ').toUpperCase()}
-                                </h2>
-                            </div>
-                            <span className="text-gray-400">
-                                Confidence: {(result.confidence * 100).toFixed(1)}%
-                            </span>
-                        </div>
-
-                        <div className="space-y-6">
-                            <div>
-                                <h3 className="text-lg font-semibold mb-2 text-blue-400">Reasoning</h3>
-                                <p className="text-gray-300">{result.reasoning}</p>
-                            </div>
-
-                            {result.keyword_matches && Object.keys(result.keyword_matches).length > 0 && (
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2 text-blue-400">Keyword Matches</h3>
-                                    <div className="space-y-2">
-                                        {Object.entries(result.keyword_matches).map(([category, matches]) => (
-                                            <div key={category} className="bg-gray-700/50 p-4 rounded-lg">
-                                                <h4 className="font-medium text-gray-200 mb-2">
-                                                    {category.replace('_', ' ').toUpperCase()}
-                                                </h4>
-                                                <ul className="space-y-1">
-                                                    {matches.map((match, index) => (
-                                                        <li key={index} className="text-gray-400">
-                                                            "...{match}..."
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
+                        <h2 className="text-xl font-semibold text-blue-400 mb-4">Document Summary</h2>
+                        {summaries.map((sec, index) => {
+                            // If there's no summary text, skip rendering
+                            if (!sec.summary || !sec.summary.trim()) {
+                                return null;
+                            }
+                            return (
+                                <div key={index} className="mb-6">
+                                    <h3 className="text-lg font-bold text-gray-200 mb-2">{sec.heading}</h3>
+                                    <div className="pl-4">
+                                        {/* Each bullet or line from the summary in <p> tags */}
+                                        {sec.summary.split('\n').map((line, idx) => (
+                                            <p key={idx} className="text-gray-300 mb-1">
+                                                {line}
+                                            </p>
                                         ))}
                                     </div>
                                 </div>
-                            )}
-
-                            {result.exclusion_flags && result.exclusion_flags.length > 0 && (
-                                <div>
-                                    <h3 className="text-lg font-semibold mb-2 text-blue-400">Exclusion Flags</h3>
-                                    <ul className="list-disc list-inside space-y-1">
-                                        {result.exclusion_flags.map((flag, index) => (
-                                            <li key={index} className="text-red-400">
-                                                {flag}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>

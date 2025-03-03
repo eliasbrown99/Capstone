@@ -5,7 +5,6 @@ import os
 from dotenv import load_dotenv
 
 from app.services import SolicitationService
-from app.models import SolicitationClassification
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
@@ -24,11 +23,17 @@ app.add_middleware(
 
 solicitation_service = SolicitationService(api_key)
 
-@app.post("/classify/", response_model=SolicitationClassification)
-async def classify_document(file: UploadFile):
-    documents = await solicitation_service.document_loader.load_document(file)
-    result = await solicitation_service.classify_solicitation(documents)
-    return result
+@app.post("/summarize/")
+async def summarize_document(file: UploadFile):
+    """
+    Accepts an uploaded document and returns a list of summarized sections:
+    [
+      {"heading": "...", "summary": "..."},
+      ...
+    ]
+    """
+    result = await solicitation_service.summarize_document(file)
+    return {"summaries": result}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

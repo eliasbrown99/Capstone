@@ -8,7 +8,10 @@ import tempfile
 class DocumentLoader:
     def __init__(self, text_splitter=None):
         if text_splitter is None:
-            self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            self.text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1500,
+                chunk_overlap=200
+            )
         else:
             self.text_splitter = text_splitter
 
@@ -30,10 +33,13 @@ class DocumentLoader:
                 loader = UnstructuredWordDocumentLoader(str(temp_path))
             else:
                 raise HTTPException(status_code=400, detail="Unsupported file type")
+
             docs = loader.load()
+            # Split docs into textual chunks
             splits = self.text_splitter.split_documents(docs)
             text_chunks = [d.page_content for d in splits]
             return text_chunks
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error loading document: {str(e)}")
         finally:
