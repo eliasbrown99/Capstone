@@ -6,7 +6,6 @@ from .summarization import (
     create_summary_llm,
     detect_headings_and_sections,
     is_heading_relevant,
-    is_content_relevant,
     summarize_section
 )
 
@@ -19,7 +18,8 @@ class SolicitationService:
           - An LLM for summarization, configured via create_summary_llm.
         """
         self.document_loader = DocumentLoader()
-        self.llm = create_summary_llm(openai_api_key, model_name="gpt-4")
+        self.llm = create_summary_llm(
+            openai_api_key, model_name="gpt-3.5-turbo")
 
     async def summarize_document(self, file) -> list:
         """
@@ -27,7 +27,7 @@ class SolicitationService:
           1. Loading & splitting text via DocumentLoader.
           2. Detecting headings in the combined text.
           3. Deciding if each section is relevant to scope-of-work tasks.
-          4. Summarizing each section with an appropriate prompt.
+          4. Summarizing each relevant section.
           5. Returning a list of { heading, summary } for rendering.
         """
         # 1) Load text chunks from the file
@@ -44,23 +44,20 @@ class SolicitationService:
         # 3) Detect headings & group lines by section
         sections = detect_headings_and_sections(full_text)
 
-        # 4) Summarize each section, focusing on tasks or scope-of-work
+        # 4) Summarize only relevant sections
         summarized_sections = []
         for sec in sections:
             heading = sec["heading"]
             content = sec["content"]
 
-            # Determine relevance by heading or content keywords
-            relevant = is_heading_relevant(heading) or is_content_relevant(content)
+            # Determine relevance using the heading only (content check removed)
+            if is_heading_relevant(heading):
+                summary = await summarize_section(self.llm, heading, content)
 
-            # Summarize the section with the correct prompt
-            summary = await summarize_section(self.llm, heading, content, relevant)
-
-            # If the model returns a non-empty summary, store it
-            if summary.strip():
-                summarized_sections.append({
-                    "heading": heading,
-                    "summary": summary
-                })
+                if summary.strip():
+                    summarized_sections.append({
+                        "heading": heading,
+                        "summary": summary
+                    })
 
         return summarized_sections
