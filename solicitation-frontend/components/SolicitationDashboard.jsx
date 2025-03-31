@@ -66,6 +66,8 @@ const SolicitationDashboard = () => {
 
             const data = await response.json();
             // The backend returns something like { summaries: [ { heading: "", summary: "" }, ... ] }
+            console.log('Response data:', data);
+
             setSummaries(data.summaries || []);
         } catch (err) {
             setError(err.message);
@@ -91,7 +93,7 @@ const SolicitationDashboard = () => {
                             <input
                                 type="file"
                                 onChange={handleFileChange}
-                                accept=".pdf,.doc,.docx"
+                                accept=".pdf,.doc,.docx,.md"
                                 className="hidden"
                                 id="file-upload"
                             />

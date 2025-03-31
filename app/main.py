@@ -9,7 +9,8 @@ from app.services import SolicitationService
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise ValueError("OPENAI_API_KEY environment variable is not set. Please set it in your .env file.")
+    raise ValueError(
+        "OPENAI_API_KEY environment variable is not set. Please set it in your .env file.")
 
 app = FastAPI()
 
@@ -23,17 +24,13 @@ app.add_middleware(
 
 solicitation_service = SolicitationService(api_key)
 
+
 @app.post("/summarize/")
 async def summarize_document(file: UploadFile):
-    """
-    Accepts an uploaded document and returns a list of summarized sections:
-    [
-      {"heading": "...", "summary": "..."},
-      ...
-    ]
-    """
     result = await solicitation_service.summarize_document(file)
+    # <--- must be a list of { heading, summary }
     return {"summaries": result}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,0 +1,399 @@
+{
+    "info": {
+        "_postman_id": "f8cb52a6-d7b1-4ebe-8509-da62e7a14aa8",
+        "name": "LLMWhisperer V2.0.0",
+        "description": "## Introduction\n\nLLMWispherer APIs are a set of APIs that allow you to:\n\n- Convert your complex PDF documents and scanned documents to text format which can be used with LLMs\n    \n- Get bounding box details of serach terms in the document. This can be used to highlight the search terms in your frontend application\n    \n\nThe APIs are RESTful and can be easily integrated into your existing systems.\n\nMore documentation [here](https://docs.unstract.com/llmwhisperer/index.html)\n\nOn Slack, [join great conversations](https://join-slack.unstract.com/) around LLMs, their ecosystem and leveraging them to automate the previously unautomatable!\n\n[LLMWhisperer Playground](https://pg.llmwhisperer.unstract.com/): Test drive LLMWhisperer with your own documents. No sign up needed!",
+        "schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
+        "_exporter_id": "31086586",
+        "_collection_link": "https://llmwhisperer.postman.co/workspace/Team-Workspace~b9fed102-be11-42c4-8f35-bb1a5d72ac82/collection/31086586-f8cb52a6-d7b1-4ebe-8509-da62e7a14aa8?action=share&source=collection_link&creator=31086586"
+    },
+    "item": [
+        {
+            "name": "Whisper Management",
+            "item": [
+                {
+                    "name": "Convert your PDF/Scanned documents to text format which can be used by LLMs",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const statusCode = pm.response.code;",
+                                    "",
+                                    "if(statusCode == 202){",
+                                    "    whisperHash = pm.response.json()[\"whisper_hash\"]",
+                                    "    pm.collectionVariables.set(\"whisperHash\", whisperHash);",
+                                    "}",
+                                    ""
+                                ],
+                                "type": "text/javascript",
+                                "packages": {}
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "exec": [
+                                    ""
+                                ],
+                                "type": "text/javascript",
+                                "packages": {}
+                            }
+                        }
+                    ],
+                    "protocolProfileBehavior": {
+                        "disabledSystemHeaders": {
+                            "content-type": true
+                        }
+                    },
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "file",
+                            "file": {
+                                "src": ""
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/whisper",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whisper"
+                            ],
+                            "query": [
+                                {
+                                    "key": "mode",
+                                    "value": "form",
+                                    "description": "The processing mode to be used. Refer to the modes section in docs for more information. parameter mode which can be of `native_text`, `low_cost`, `high_quality` and `form`.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "output_mode",
+                                    "value": "layout_preserving",
+                                    "description": "Layout preserving (`layout_preserving`) mode tries to extract the text from the document as is, maintaining the structural layout of the document. Text (`text`) mode extracts the text from the document without applying any processing or intelligence. ",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "page_seperator",
+                                    "value": "<<<",
+                                    "description": "The string to be used as a page separator. For dynamic page separator you can specify something like <<< {{page_no}} >>> this.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "line_splitter_tolerance",
+                                    "value": "0.4",
+                                    "description": "Factor to decide when to move text to the next line when it is above or below the baseline. The default value of 0.4 signifies 40% of the average character height",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "horizontal_stretch_factor",
+                                    "value": "1.0",
+                                    "description": "Factor by which a horizontal stretch has to applied. It defaults to 1.0. A stretch factor of 1.1 would mean at 10% stretch factor applied. Normally this factor need not be adjusted. You might want to use this parameter when multi column layouts back into each other. For example in a two column layout, the two columns get merged into one.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "pages_to_extract",
+                                    "value": "",
+                                    "description": "Define which pages to extract. By default all pages are extracted. You can specify which pages to extract with this parameter. Example 1-5,7,21- will extract pages 1,2,3,4,5,7,21,22,23,24... till the last page.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "use_webhook",
+                                    "value": "{{webhookName}}",
+                                    "description": "The webhook's name which will should be called after the conversion is complete. The name should have been registered earlier using the webhooks management endpoint",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "webhook_metadata",
+                                    "value": "",
+                                    "description": "Any metadata which should be sent to the webhook. This data is sent verbatim to the callback endpoint. Refer to webhooks documentation.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "url_in_post",
+                                    "value": "false",
+                                    "description": "If set to true send the URL to download from - in the post body. See example below",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "url",
+                                    "value": "",
+                                    "description": "The default behaviour of the API is to process the document sent in the request body. If you want to process a document from a URL, you can provide the URL here. The URL should be accessible without any authentication. If the request body is empty, the API will try to process the document from the URL.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "mark_vertical_lines",
+                                    "value": "false",
+                                    "description": "Whether to reproduce vertical lines in the document. Note: This parameter is not applicable if mode=native_text.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "mark_horizontal_lines",
+                                    "value": "false",
+                                    "description": "Whether to reproduce horizontal lines in the document. Note: This parameter is not applicable if mode=native_text and will not work if mark_vertical_lines is set to false.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "line_splitter_strategy",
+                                    "value": "left-priority",
+                                    "description": "The line splitter strategy to use. An advanced option for customizing the line splitting process. Refer to the documentation below",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "median_filter_size",
+                                    "value": "0",
+                                    "description": "The size of the median filter to be applied to the image. This is used to remove noise from the image. This parameter works only in the low_cost mode",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "gaussian_blur_radius",
+                                    "value": "0",
+                                    "description": "The radius of the gaussian blur to be applied to the image. This is used to remove noise from the image. This parameter works only in the low_cost mode",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "lang",
+                                    "value": "eng",
+                                    "description": "The language hint to OCR. Currently auto detected. This parameter is ingnored in the version.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "tag",
+                                    "value": "default",
+                                    "description": "Auditing feature. Set a value which will be associated with the invocation of the API. This can be used for cross referencing in usage reports",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "file_name",
+                                    "value": "",
+                                    "description": "Auditing feature. Set a value which will be associated with the invocation of the API. This can be used for cross referencing in usage reports",
+                                    "disabled": true
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Check the status of the text extraction process.",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/whisper-status?whisper_hash={{whisperHash}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whisper-status"
+                            ],
+                            "query": [
+                                {
+                                    "key": "whisper_hash",
+                                    "value": "{{whisperHash}}",
+                                    "description": "The whisper hash returned while starting the whisper process."
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Retrieve the text of the document.",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/whisper-retrieve?whisper_hash={{whisperHash}}&text_only=true",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whisper-retrieve"
+                            ],
+                            "query": [
+                                {
+                                    "key": "whisper_hash",
+                                    "value": "{{whisperHash}}",
+                                    "description": "The whisper hash returned while starting the whisper process."
+                                },
+                                {
+                                    "key": "text_only",
+                                    "value": "true",
+                                    "description": "If set to true, only the text is returned. If set to false, the text along with the metadata is returned."
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ],
+            "description": "### API Endpoints[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_apis_intro/#api-endpoints)\n\n| Endpoint | Description |\n| --- | --- |\n| [<code>/whisper</code>](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_text_extraction_api/) | Convert your PDF documents, scanned documents, scanned images, Office documents and spreadsheets to text format which can be used by LLMs or other downstream applications. |\n| [<code>/whisper-status</code>](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_text_extraction_status_api/) | Get the status of the conversion process. This can be used to check the status of the conversion process when the conversion is done. |\n| [<code>/whisper-retrieve</code>](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_text_extraction_retrieve_api/) | Retrieve the converted text of the document. |\n\n### Typical Workflows[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_apis_intro/#typical-workflows)\n\n#### Polling Workflow[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_apis_intro/#polling-workflow)\n\n1. Call the `/whisper` API to convert your document to text format. This request will return a `whisper_hash` that will be automatically assigned to the `whisperHash` variable\n    \n2. Check the status of the conversion process by calling the `/whisper-status` API. Repeat this step until the status is `processed`.\n    \n3. Once the conversion is done, retrieve the converted text by calling the `/whisper-retrieve` API."
+        },
+        {
+            "name": "Webhook Management",
+            "item": [
+                {
+                    "name": "Register a webhook endpoint",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const statusCode = pm.response.code;",
+                                    "// Set the webhook name to webhookName variable",
+                                    "if (statusCode == 200){",
+                                    "    let requestBody = JSON.parse(pm.request.body.raw);",
+                                    "    let webhookName = requestBody.webhook_name;",
+                                    "    pm.collectionVariables.set(\"webhookName\", webhookName);",
+                                    "}"
+                                ],
+                                "type": "text/javascript",
+                                "packages": {}
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "exec": [
+                                    ""
+                                ],
+                                "type": "text/javascript",
+                                "packages": {}
+                            }
+                        }
+                    ],
+                    "protocolProfileBehavior": {
+                        "disabledSystemHeaders": {
+                            "content-type": true
+                        }
+                    },
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"url\": \"<URL to be called after conversion is done>\",\n    \"auth_token\": \"<Token (bearer)>\",\n    \"webhook_name\": \"<Name of the webhook>\"\n}"
+                        },
+                        "url": "{{baseUrl}}/whisper-manage-callback"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Retrieve webhook details",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    ""
+                                ],
+                                "type": "text/javascript",
+                                "packages": {}
+                            }
+                        },
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "exec": [
+                                    ""
+                                ],
+                                "type": "text/javascript",
+                                "packages": {}
+                            }
+                        }
+                    ],
+                    "protocolProfileBehavior": {
+                        "disabledSystemHeaders": {
+                            "content-type": true
+                        }
+                    },
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/whisper-manage-callback?webhook_name={{webhookName}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "whisper-manage-callback"
+                            ],
+                            "query": [
+                                {
+                                    "key": "webhook_name",
+                                    "value": "{{webhookName}}",
+                                    "description": "The name of the webhook."
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ],
+            "description": "# Webhooks\n\nLLMWhisperer from V2 onwards supports webhooks. You can now register a webhook and use it to receive the processed document.\n\n### Requirements[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/llm_whisperer_webhooks/#requirements)\n\n- A publicly accessible URL to receive the webhook. (Can be internal in on-prem installations)\n    \n- The URL must be able to receive POST requests.\n    \n- The URL must be able to handle the payload sent by the webhook.\n    \n- Only Bearer token authentication is supported for webhooks.\n    \n- The webhook must return a 200 status code to acknowledge receipt of the payload.\n    \n- A maximum of 3 retries will be made in case of a failure. (Can be changed in on-prem installations)\n    \n\n### Payload[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/llm_whisperer_webhooks/#payload)\n\nThe payload sent to the webhook will be a JSON object with the following structure:\n\n``` markup\n{\n   \"payload_status\":{\n      \"status\":\"success\",\n      \"# The status of the payload.\"\"message\":\"\"\"# Message in case of error\"\"whisper_hash\":\"<WHISPER_HASH>\"\"# Whisper hash of intiated request.\"\n   },\n   \"line_metadata\":[\n      \n   ],\n   \"# Refer to retrieve API for details\"\"confidence_metadata\":[\n      \n   ],\n   \"# Refer to retrieve API for details\"\"result_text\":\"extracted_text\",\n   \"# The extracted text\"\"metadata\":{\n      \n   }\"# Refer to retrieve API for details\"\n}\n\n ```\n\n### Setting up a webhook[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/llm_whisperer_webhooks/#setting-up-a-webhook)\n\nTo set up a webhook, you need to provide the following details:\n\n- `url` (str, required): The URL of the webhook to call after the document is processed.\n    \n- `auth_token` (str, required): The Bearer token to use for authentication. Note: Pass the token alone without the 'Bearer' keyword.\n    \n- `webhook_name` (str, required): The name of the webhook to register.\n    \n\nOnce webhook submission successful the `webhook_name` value will automatically assigned to `webhookName` variable."
+        },
+        {
+            "name": "Usage Metrics",
+            "item": [
+                {
+                    "name": "Check the usage metrics of your LLMWhisperer account.",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/get-usage-info"
+                    },
+                    "response": []
+                }
+            ],
+            "description": "### For Paid Plans[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_usage_api/#for-paid-plans)\n\n``` json\n{\n   \"subscription_plan\":\"<Plan Name>\",\n   \"monthly_quota\":\"<Monthly Quota>\",\n   \"current_page_count\":\"<Current Page Count>\",\n   \"current_page_count_native_text\":\"<For Native Text Mode>\",\n   \"current_page_count_low_cost\":\"<For Low Cost Mode>\",\n   \"current_page_count_high_quality\":\"<For High Quality Mode>\",\n   \"current_page_count_form\":\"<For Form Mode>\",\n   \"daily_quota\":-1,\n   \"overage_page_count\":\"<Overage Page Count>\",\n   \"today_page_count\":\"<Page Count For Day>\"\n}\n\n ```\n\n`daily_quota` will be `-1` for paid plans. There is no daily quota for paid plans.\n\n### For Free Plan[​](https://docs.unstract.com/llmwhisperer/llm_whisperer/apis/llm_whisperer_usage_api/#for-free-plan)\n\n``` json\n{\n   \"subscription_plan\":\"<Plan Name>\",\n   \"daily_quota\":\"<Daily Quota>\",\n   \"today_page_count\":\"<Page Count For Day>\",\n   \"monthly_quota\":-1,\n   \"current_page_count\":-1,\n   \"overage_page_count\":-1\n}\n\n ```\n\nFields marked `-1` for free plans indicate that there's no quota or it doesn't apply to these plans."
+        }
+    ],
+    "auth": {
+        "type": "apikey",
+        "apikey": {
+            "key": "unstract-key",
+            "value": "{{apiKey}}"
+        }
+    },
+    "event": [
+        {
+            "listen": "prerequest",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    "",
+                    ""
+                ]
+            }
+        },
+        {
+            "listen": "test",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    ""
+                ]
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "https://llmwhisperer-api.us-central.unstract.com/api/v2"
+        },
+        {
+            "key": "apiKey",
+            "value": "0iiVDN5SfU8Q_HXMgV3Hr4XqQwnVegvUSbaeMQh4S6I"
+        }
+    ]
+}
