@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from .document_loader import DocumentLoader
-from .summarization import detect_headings_and_summarize
+from .summarization import detect_headings_and_summarize_llm
 
 
 class SolicitationService:
@@ -31,8 +31,8 @@ class SolicitationService:
         full_text = "\n".join(text_chunks)
 
         # 3) Let summarization.py handle the headings & summarizing
-        summarized_sections = await detect_headings_and_summarize(
-            full_text, self.openai_api_key, debug=True
+        summarized_sections = await detect_headings_and_summarize_llm(
+            full_text, self.openai_api_key
         )
 
         return summarized_sections
