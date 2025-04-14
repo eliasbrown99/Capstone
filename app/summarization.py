@@ -3,27 +3,40 @@ import asyncio
 from typing import List, Dict, Any
 
 # If you're using "langchain_openai" for ChatOpenAI:
-# from langchain_openai import ChatOpenAI
-
-# Otherwise, for official LangChain:
 from langchain.chat_models import ChatOpenAI
+
+# Otherwise, if using the official LangChain package:
+# from langchain.chat_models import ChatOpenAI
 
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+
 ##############################################################################
-# (A) PARSE (REGEX) -> Label lines as heading-level-x or body-text
+# (A) PARSE (REGEX) -> REFINE (LLM) FOR TRUE NUMBERED HEADINGS
 ##############################################################################
+
+import re
+from typing import List, Dict
+import asyncio
+from langchain.prompts import PromptTemplate
+from langchain.schema import SystemMessage, HumanMessage
 
 
 def parse_markdown_headings(document_text: str) -> List[Dict[str, str]]:
     """
-    Identify lines that start with # (1..6) as headings (clamped to level 3).
-    Everything else is body-text.
+    First pass (REGEX):
+    - If a line starts with one or more '#' chars, label as heading-level-1..3 (clamped to heading-level-3).
+    - Otherwise, label as body-text.
+
+    Returns a list of dicts:
+      [{"text": line_text, "class": "heading-level-x" or "body-text"}, ...]
     """
     lines = [ln.strip() for ln in document_text.splitlines() if ln.strip()]
-    pattern = re.compile(r'^(#{1,6})\s+(.*)$')
+
+    # Match one or more '#' at the beginning, then optional whitespace, then rest of line
+    pattern = re.compile(r'^(#+)\s*(.*)$')
     results = []
 
     for ln in lines:
@@ -31,30 +44,26 @@ def parse_markdown_headings(document_text: str) -> List[Dict[str, str]]:
         if match:
             hashes = match.group(1)
             heading_text = match.group(2).strip()
-            level = min(len(hashes), 3)  # clamp heading-level to 3
+            level = min(len(hashes), 3)  # clamp heading level to 1..3
             heading_class = f"heading-level-{level}"
             results.append({"text": heading_text, "class": heading_class})
         else:
+            # It's body text
             results.append({"text": ln, "class": "body-text"})
 
     return results
 
-##############################################################################
-# (B) LLM REFINEMENT -> Confirm actual numbering / roman numeral
-##############################################################################
 
-
+# Prompt for heading refinement
 REFINE_HEADING_PROMPT = PromptTemplate(
     input_variables=["heading_text"],
     template="""
-You are given a heading line from a Markdown file that starts with '#' characters.
-We suspect it might be a "numbered heading" (e.g., "1.", "2.1", "III.", "XIV", etc.).
+You are given a heading line from a Markdown file. It starts with one or more '#' characters.
+We suspect it might be a "numbered heading" (i.e., it has a numeric or roman-numeral scheme in its text).
+Examples of valid numbering: "1.", "1.2", "III.", "XIV", "2.1.3", etc.
 
-If the heading truly has a numbering or roman numeral scheme, output EXACTLY:
-TRUE_HEADING
-
-Otherwise output EXACTLY:
-NOT_HEADING
+If the heading text has a numbering or roman-numeral scheme, respond exactly "TRUE_HEADING".
+Otherwise respond exactly "NOT_HEADING".
 
 Heading text: "{heading_text}"
 """
@@ -63,10 +72,15 @@ Heading text: "{heading_text}"
 
 async def refine_headings_by_numbering(llm, lines: List[Dict[str, str]]) -> None:
     """
-    For each heading line, ask the LLM if it truly has numbering/roman numerals.
-    If not, convert that line's class to 'body-text'.
+    For each line that is labeled heading-level-* by the regex pass,
+    confirm via LLM whether it truly has a numbering/roman-numeral scheme.
+    If it does not, demote it to body-text.
+
+    This function mutates the 'lines' list in place.
     """
     tasks = []
+
+    # We'll only refine lines that were labeled as headings
     to_refine_indices = [
         i for i, item in enumerate(lines)
         if item["class"].startswith("heading-level")
@@ -74,42 +88,184 @@ async def refine_headings_by_numbering(llm, lines: List[Dict[str, str]]) -> None
 
     for idx in to_refine_indices:
         heading_text = lines[idx]["text"]
-        system_msg = SystemMessage(
-            content="Output EXACTLY 'TRUE_HEADING' or 'NOT_HEADING'. No extra text.")
-        user_msg = HumanMessage(
-            content=REFINE_HEADING_PROMPT.format(heading_text=heading_text))
 
+        system_msg = SystemMessage(
+            content="You are a strict classifier for heading lines. Output EXACTLY 'TRUE_HEADING' or 'NOT_HEADING'."
+        )
+        user_msg = HumanMessage(
+            content=REFINE_HEADING_PROMPT.format(heading_text=heading_text)
+        )
+
+        # Gather tasks to run concurrently
         tasks.append((idx, llm.ainvoke([system_msg, user_msg])))
 
-    results = await asyncio.gather(*[t[1] for t in tasks])
+    # Run all LLM tasks
+    results = await asyncio.gather(*[task[1] for task in tasks])
 
+    # Update lines in-place
     for (idx, _), response in zip(tasks, results):
         verdict = response.content.strip().upper()
         if verdict != "TRUE_HEADING":
-            # Convert to body text
+            # If not confirmed as a valid numbered heading, demote to body-text
             lines[idx]["class"] = "body-text"
 
+
 ##############################################################################
-# (C) CLASSIFY HEADING RELEVANCE
+# (B) BUILD HIERARCHICAL STRUCTURE
+##############################################################################
+
+def build_hierarchical_structure(classified_lines: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """
+    Convert lines labeled heading-level-1..3 or body-text into a nested structure:
+       [
+         {
+           "title": <heading-level-1 text>,
+           "content": [list of body text strings],
+           "subsections": [
+             {
+               "title": <heading-level-2 text>,
+               "content": [...],
+               "subsections": [
+                 {
+                   "title": <heading-level-3 text>,
+                   "content": [...]
+                 },
+                 ...
+               ]
+             },
+             ...
+           ]
+         },
+         ...
+       ]
+    """
+    structured_doc = []
+    current_h1 = None
+    current_h2 = None
+    current_h3 = None
+
+    for item in classified_lines:
+        line_text = item["text"]
+        line_class = item["class"]
+
+        if line_class == "heading-level-1":
+            current_h1 = {
+                "title": line_text,
+                "content": [],
+                "subsections": []
+            }
+            structured_doc.append(current_h1)
+            current_h2 = None
+            current_h3 = None
+
+        elif line_class == "heading-level-2":
+            if current_h1 is None:
+                current_h1 = {
+                    "title": "Untitled Section",
+                    "content": [],
+                    "subsections": []
+                }
+                structured_doc.append(current_h1)
+            current_h2 = {
+                "title": line_text,
+                "content": [],
+                "subsections": []
+            }
+            current_h1["subsections"].append(current_h2)
+            current_h3 = None
+
+        elif line_class == "heading-level-3":
+            if current_h2 is None:
+                if current_h1 is None:
+                    current_h1 = {
+                        "title": "Untitled Section",
+                        "content": [],
+                        "subsections": []
+                    }
+                    structured_doc.append(current_h1)
+                current_h2 = {
+                    "title": "Untitled Subsection",
+                    "content": [],
+                    "subsections": []
+                }
+                current_h1["subsections"].append(current_h2)
+
+            current_h3 = {
+                "title": line_text,
+                "content": []
+            }
+            current_h2["subsections"].append(current_h3)
+
+        else:
+            # body-text
+            if current_h3 is not None:
+                current_h3["content"].append(line_text)
+            elif current_h2 is not None:
+                current_h2["content"].append(line_text)
+            elif current_h1 is not None:
+                current_h1["content"].append(line_text)
+            else:
+                current_h1 = {
+                    "title": "Untitled Section",
+                    "content": [line_text],
+                    "subsections": []
+                }
+                structured_doc.append(current_h1)
+
+    return structured_doc
+
+
+def gather_section_text(section: Dict[str, Any]) -> str:
+    """
+    Recursively gather all text in this section and its subsections.
+    Return as a single string.
+    """
+    texts = []
+    # Add top-level content
+    texts.extend(section["content"])
+
+    # Gather nested
+    if "subsections" in section:
+        for subsec in section["subsections"]:
+            texts.append(gather_section_text(subsec))
+
+    return "\n".join(texts)
+
+
+##############################################################################
+# (C) LLM-BASED HEADING RELEVANCE (PASS 1)
 ##############################################################################
 
 HEADING_CLASSIFICATION_PROMPT = PromptTemplate(
     input_variables=["capabilities", "heading_text", "content_snippet"],
     template="""
-You are an expert analyst reviewing section headers and content from government solicitations.
+You are an expert analyst reviewing section headers and content from government solicitations. 
 Acato is a company with the following capabilities:
 
 {capabilities}
 
-Your task is to decide if the **section** is RELEVANT or IRRELEVANT to Acato’s likely role (e.g., awarding or performance).
+Your task is to determine whether the **section below** is RELEVANT or IRRELEVANT to Acato’s potential role — such as being awarded or performing substantive work. 
 
-Heuristics:
-- RELEVANT if content includes scope of work, tasks, deliverables, requirements, optional surge support, 
-  strategic or operational priorities, key personnel responsibilities, software/testing efforts, etc.
-- IRRELEVANT if the content focuses on government-furnished equipment, certifications/regulations, 
-  travel/logistics, FAR clauses, place of performance, references, etc.
+Use the following heuristics:
+- **RELEVANT** if the section contains:
+    - Scope of Work
+    - Tasks, Deliverables, Requirements
+    - Optional Surge Support
+    - Strategic Priorities (that may tie into software systems or testing)
+    - Key Personnel descriptions or requirements
+    - Software Testing, Evaluation, or Support
+    - Specific objectives or performance goals
+- **IRRELEVANT** if the section contains:
+    - Government Furnished Equipment / Property / Info
+    - Certifications, Regulations, FAR clauses
+    - Travel or Access logistics
+    - Inspection & Acceptance
+    - Contract structure or section listings
+    - Reporting logistics, unless strategy-oriented
+    - Reference documents (e.g. “Applicable Documents”)
+    - Place of performance details
 
-Output exactly one word: "RELEVANT" or "IRRELEVANT".
+Output exactly one word: "RELEVANT" or "IRRELEVANT"
 
 Heading: {heading_text}
 
@@ -126,13 +282,16 @@ async def classify_heading_with_llm(
     capabilities_text: str,
 ) -> bool:
     """
-    Returns True if the LLM says "RELEVANT", False if "IRRELEVANT".
+    Calls an LLM to decide if heading is relevant (True) or not (False).
+    We feed a system message describing the role, plus a prompt containing the heading and snippet.
     """
     system_msg = SystemMessage(
         content=(
-            "You are a strict binary classifier. Return only 'RELEVANT' or 'IRRELEVANT'."
+            "You are a helpful classifier. You will return only 'RELEVANT' or 'IRRELEVANT' "
+            "for the user's heading and snippet, based on whether the content matches Acato's capabilities."
         )
     )
+
     user_prompt = HEADING_CLASSIFICATION_PROMPT.format(
         capabilities=capabilities_text,
         heading_text=heading,
@@ -145,20 +304,19 @@ async def classify_heading_with_llm(
 
     return classification.startswith("RELEVANT")
 
+
 ##############################################################################
-# (D) SUMMARIZE SECTION - Strong prompt for 5 bullet points
+# (D) PROMPT TEMPLATE FOR SUMMARIZATION (PASS 2)
 ##############################################################################
 
 SOW_SUMMARY_PROMPT = PromptTemplate(
     input_variables=["heading", "text"],
     template="""
-You are summarizing a document section titled: "{heading}" that likely contains tasks, scope of work,
-or responsibilities related to a QA/test role.
+You are summarizing a document section titled: "{heading}" which likely contains tasks, scope of work, 
+or responsibilities for Acato's QA/test role.
 
-**RULES**:
-1. You MUST produce no more than 5 bullet points in total.
-2. If the text contains more potential items, combine or omit details.
-3. Output ONLY those bullet points (no extra commentary).
+Your goal: Provide a concise set of bullet points focusing on tasks or responsibilities relevant to THIS SECTION.
+Do NOT exceed 5 bullet points total.
 
 SECTION TEXT:
 {text}
@@ -168,14 +326,15 @@ SECTION TEXT:
 
 async def summarize_section(llm, heading: str, text: str) -> str:
     """
-    Summarizes the text, instructing the LLM to create at most 5 bullet points.
-    Returns the raw summary from the LLM (which may sometimes exceed 5).
+    Summarizes a document section using the SOW_SUMMARY_PROMPT.
+    Returns raw string (which may exceed 5 bullets if the LLM doesn't follow instructions).
     """
     response = await (SOW_SUMMARY_PROMPT | llm).ainvoke({"heading": heading, "text": text})
     return response.content.strip() if response.content else ""
 
+
 ##############################################################################
-# (E) SECOND PASS TO ENFORCE 5 BULLETS IF NEEDED
+# (D.2) SECOND PASS PROMPT TO ENFORCE 5 BULLET LIMIT STRICTLY
 ##############################################################################
 
 ENFORCE_BULLET_LIMIT_PROMPT = PromptTemplate(
@@ -183,7 +342,7 @@ ENFORCE_BULLET_LIMIT_PROMPT = PromptTemplate(
     template="""
 You are given a bullet-list summary that may exceed 5 bullet points.
 
-Task: Rewrite it so there are at most 5 bullet points. 
+Task: Rewrite it so there are at most 5 bullet points.
 If there are more, you must combine or omit items.
 
 Output ONLY the final bullet list (nothing else).
@@ -204,19 +363,21 @@ async def enforce_bullet_limit(llm, text: str) -> str:
 
     system_msg = SystemMessage(
         content=(
-            "You must enforce the bullet limit. "
-            "Ensure there are no more than 5 bullet points total. Combine or omit if needed."
+            "You must ensure there are no more than 5 bullet points total. "
+            "Combine or omit if needed."
         )
     )
     user_msg = HumanMessage(
-        content=ENFORCE_BULLET_LIMIT_PROMPT.format(raw_summary=text))
+        content=ENFORCE_BULLET_LIMIT_PROMPT.format(raw_summary=text)
+    )
+
     response = await llm.ainvoke([system_msg, user_msg])
     return response.content.strip() if response.content else ""
 
-##############################################################################
-# (F) MAIN PIPELINE
-##############################################################################
 
+##############################################################################
+# (E) MAIN: PARSE -> REFINE -> BUILD -> PASS1 (CLASSIFY) -> PASS2 (SUMMARIZE)
+##############################################################################
 
 async def detect_headings_and_summarize_llm(
     document_text: str,
@@ -224,16 +385,17 @@ async def detect_headings_and_summarize_llm(
     debug: bool = True
 ) -> List[Dict[str, str]]:
     """
-    Steps:
-    1) Parse doc lines -> heading vs. body (regex).
-    2) LLM refinement to confirm heading is truly numbered.
-    3) Flat structure: each heading + subsequent body text is a "section."
-    4) Classify heading RELEVANT vs IRRELEVANT.
-    5) If relevant, feed entire section (chunked if large) to summarization prompt
-       that demands at most 5 bullets.
-    6) Use a second LLM pass to strictly enforce 5 bullet limit if the model returned more.
+    1) Parse doc lines using regex to identify # lines vs body lines
+    2) LLM-based refinement: lines with '#' are checked to confirm they have numbering or roman numerals
+       - If not, convert them to body-text.
+    3) Build hierarchical structure
+    4) Flatten only the top-level sections
+    5) Pass 1: For each top-level heading, do an LLM-based classification
+       (given some internal 'capabilities_text').
+    6) Pass 2: Summarize only the headings deemed RELEVANT, chunking if necessary.
+    7) A second LLM prompt strictly enforces no more than 5 bullet points.
 
-    Returns list of dicts: [{ "heading": heading, "summary": summary }, ...].
+    Returns list of { "heading": <h>, "summary": <s> }.
     """
 
     # Example text describing Acato's capabilities
@@ -244,14 +406,14 @@ async def detect_headings_and_summarize_llm(
         "and test environment maintenance."
     )
 
-    # Step 1) Parse lines
+    # 1) Parse lines (REGEX)
     lines_classified = parse_markdown_headings(document_text)
     if not lines_classified:
         if debug:
-            print("[DEBUG] No headings or body text found.")
+            print("[DEBUG] No headings or text found.")
         return []
 
-    # Step 2) LLM-based heading refinement
+    # 2) Refine headings using LLM
     llm_refine = ChatOpenAI(
         model_name="gpt-3.5-turbo",
         temperature=0.0,
@@ -259,33 +421,24 @@ async def detect_headings_and_summarize_llm(
     )
     await refine_headings_by_numbering(llm_refine, lines_classified)
 
-    # Build a flat list of (heading, content)
-    headings_and_content = []
-    current_heading = None
-    current_content = []
+    # 3) Build hierarchical structure
+    structured_doc = build_hierarchical_structure(lines_classified)
 
-    for item in lines_classified:
-        if item["class"].startswith("heading-level"):
-            # Finish any previous heading
-            if current_heading is not None:
-                headings_and_content.append({
-                    "heading": current_heading,
-                    "content": "\n".join(current_content)
-                })
-            current_heading = item["text"]
-            current_content = []
-        else:
-            # body text
-            current_content.append(item["text"])
+    # 4) Flatten only top-level sections
+    top_sections = []
+    for top_section in structured_doc:
+        heading = top_section["title"]
+        content = gather_section_text(top_section)
+        top_sections.append({"heading": heading, "content": content})
 
-    # Catch the last heading if present
-    if current_heading is not None:
-        headings_and_content.append({
-            "heading": current_heading,
-            "content": "\n".join(current_content)
-        })
+    if debug:
+        print("\n[DEBUG] === Found Top-Level Sections ===")
+        for i, sec in enumerate(top_sections):
+            print(
+                f"Section {i+1} Heading: '{sec['heading']}' | length: {len(sec['content'])}"
+            )
 
-    # Step 3) We'll use one LLM for classification, another for summarization
+    # Create LLM for classification and summarization
     llm_classify = ChatOpenAI(
         model_name="gpt-3.5-turbo",
         temperature=0.0,
@@ -297,39 +450,41 @@ async def detect_headings_and_summarize_llm(
         openai_api_key=openai_api_key
     )
 
-    # If sections can be large, chunk them
+    # We'll chunk each top-level section if it’s large
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=2000,
         chunk_overlap=100
     )
 
-    results = []
+    summarized_sections = []
 
-    for section in headings_and_content:
-        heading = section["heading"]
-        content = section["content"]
-        snippet = content[:1000]  # classification snippet
+    # 5) Pass 1: Classify each top-level heading
+    for sec in top_sections:
+        heading = sec["heading"]
+        text = sec["content"]
 
-        # Step 4) Classify heading
-        is_relevant = await classify_heading_with_llm(
+        # We'll feed just a snippet of the text for classification
+        sample_snippet = text[:1000]
+
+        relevant = await classify_heading_with_llm(
             llm=llm_classify,
             heading=heading,
-            snippet=snippet,
-            capabilities_text=capabilities_text
+            snippet=sample_snippet,
+            capabilities_text=capabilities_text,
         )
 
-        if not is_relevant:
+        if not relevant:
             if debug:
-                print(f"[DEBUG] Heading '{heading}' -> IRRELEVANT")
+                print(
+                    f"[DEBUG] Skipping heading '{heading}' - classified IRRELEVANT.")
             continue
 
         if debug:
-            print(f"[DEBUG] Heading '{heading}' -> RELEVANT. Summarizing...")
+            print(f"[DEBUG] Heading '{heading}' is RELEVANT. Summarizing...")
 
-        # Step 5) Summarize if relevant
-        docs = text_splitter.create_documents([content])
+        # 6) Pass 2: Summarize if relevant
+        docs = text_splitter.create_documents([text])
         partial_summaries = []
-
         for d in docs:
             chunk_text = d.page_content.strip()
             if not chunk_text:
@@ -338,55 +493,59 @@ async def detect_headings_and_summarize_llm(
             if chunk_summary:
                 partial_summaries.append(chunk_summary)
 
-        # Combine chunk summaries
         combined_summary = "\n".join(partial_summaries).strip()
         if not combined_summary:
+            if debug:
+                print(f"[DEBUG] Summary empty for heading '{heading}'")
             continue
 
-        # Step 6) ENFORCE bullet limit with a second LLM pass
+        # 7) Strictly enforce no more than 5 bullet points in final output
         final_summary = await enforce_bullet_limit(llm_summary, combined_summary)
 
-        # Store final
-        results.append({
+        summarized_sections.append({
             "heading": heading,
             "summary": final_summary
         })
 
-    return results
+        if debug:
+            print(
+                f"[DEBUG] Final summary for '{heading}':\n{final_summary}\n"
+            )
+
+    return summarized_sections
+
 
 # ------------------------------------------------------------------------------
-# # Sample usage (uncomment to run directly):
+# Usage Example (uncomment to run directly):
+#
 # if __name__ == "__main__":
-#     sample_document = """# 1. Introduction
+#     sample_document = \"\"\"# 1. Introduction
 # Acato is being considered for QA tasks...
 #
 # # I. This Has Roman Numerals
-# - Some bullet in the text
-# - Another bullet
-# Some table or other content
+# Testing some roman numerals in the heading.
 #
-# # This is a heading without numbering
-# Should become body text, not a heading.
+# # ####### This is a heading with many hashtags
+# Possibly we want to see if it becomes body text or remains heading.
 #
 # # 2. Scope
-# Here are multiple bullet points:
+# This section outlines the scope of work for QA...
+# Some tasks are listed here...
 # - Task A
 # - Task B
 # - Task C
 # - Task D
 # - Task E
 # - Task F
-# This might produce more than 5 bullets if the model tries to replicate them all.
-# """
+# \"\"\"
 #
 #     summaries = asyncio.run(
 #         detect_headings_and_summarize_llm(
 #             sample_document,
-#             openai_api_key="YOUR_OPENAI_KEY",
+#             openai_api_key="sk-YourOpenAIKey",
 #             debug=True
 #         )
 #     )
 #
 #     for s in summaries:
-#         print(f"HEADING: {s['heading']}")
-#         print(f"SUMMARY:\n{s['summary']}\n")
+#         print(f"HEADING: {s['heading']}\nSUMMARY:\n{s['summary']}\n")
