@@ -11,7 +11,7 @@ if not api_key:
     raise ValueError("OPENAI_API_KEY environment variable is not set.")
 
 # Provide a path to a local PDF or DOC
-test_file_path = "/Users/eliasbrown/Desktop/Capstone/parsed_output.md"
+test_file_path = "/Users/eliasbrown/Desktop/Capstone/parsed_output_2.md"
 # test_file_path = "../Capstone/data/GoodFit/EST Attachment 1 PWS.pdf"
 # We'll mimic what your DocumentLoader does, but just for local usage.
 

@@ -1,38 +1,31 @@
-from fastapi import HTTPException
-from .document_loader import DocumentLoader
+# app/services.py
+from fastapi import HTTPException, UploadFile
+
+from .parser import parse_document  # <-- NEW import
 from .summarization import detect_headings_and_summarize_llm
 
 
 class SolicitationService:
     def __init__(self, openai_api_key: str):
-        """
-        Initialize the SolicitationService with:
-          - A DocumentLoader for reading and chunking PDFs/DOCs.
-        """
-        self.document_loader = DocumentLoader()
         self.openai_api_key = openai_api_key
 
-    async def summarize_document(self, file) -> list:
+    async def summarize_document(self, file: UploadFile) -> list:
         """
-        Summarizes an uploaded document by:
-          1. Loading & splitting text via DocumentLoader.
-          2. Using detect_headings_and_summarize() to do LLM-based heading detection & summarization.
-          3. Returning a list of { heading, summary } for rendering.
+        Summarize an uploaded document by:
+          1) Parsing it via parser.py (LlamaParse).
+          2) Running detect_headings_and_summarize_llm on the result.
+          3) Returning a list of { heading, summary }.
         """
-        # 1) Load text chunks from the file
-        text_chunks = await self.document_loader.load_document(file)
-        if not text_chunks:
+        # 1) Parse the doc to get combined text
+        parsed_text = await parse_document(file)
+        if not parsed_text:
             raise HTTPException(
-                status_code=400,
-                detail="No text found in uploaded document."
-            )
+                status_code=400, detail="No text found in uploaded document.")
 
-        # 2) Combine them into one large string
-        full_text = "\n".join(text_chunks)
-
-        # 3) Let summarization.py handle the headings & summarizing
+        # 2) Summarize
         summarized_sections = await detect_headings_and_summarize_llm(
-            full_text, self.openai_api_key
+            parsed_text,
+            self.openai_api_key
         )
 
         return summarized_sections
