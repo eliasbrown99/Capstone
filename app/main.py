@@ -1,23 +1,59 @@
-from fastapi import FastAPI, UploadFile, Depends, File, Query, HTTPException
+# app/main.py
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import os
-import json
-from dotenv import load_dotenv
-from datetime import datetime, timezone
-
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from starlette.datastructures import UploadFile as StarletteUploadFile
+from io import BytesIO
+import json
+import os
+import uvicorn
+from dotenv import load_dotenv
 
 from app.database import SessionLocal, Summary, init_db
-from app.services import SolicitationService
+from app.parser import parse_document
+from app.summarization import detect_headings_and_summarize_llm
 
 load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise ValueError("OPENAI_API_KEY environment variable not set.")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY env var not set.")
 
-app = FastAPI()
+
+# ─────────────────────────── helpers ───────────────────────────
+def _sse(data: str) -> str:
+    """Format a Server-Sent-Events line."""
+    return f"data: {data}\n\n"
+
+
+def iso_utc(dt: datetime) -> str:
+    """
+    Return an ISO-8601 string in **UTC** with a trailing Z,
+    regardless of whether the input is naive or offset-aware.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+async def get_db():
+    async with SessionLocal() as session:
+        yield session
+
+
+# ─────────────────────────── FastAPI lifespan ───────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()          # create tables once on startup
+    yield                     # app runs
+    # no shutdown tasks needed
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,118 +63,110 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-solicitation_service = SolicitationService(api_key)
 
-
-@app.on_event("startup")
-async def startup_event():
-    """
-    Ensure the 'summaries' table is created before handling requests.
-    """
-    await init_db()
-
-
-async def get_db():
-    async with SessionLocal() as session:
-        yield session
-
-
-@app.post("/summarize/")
-async def summarize_document(
+# ─────────────────────────── /summarize-stream/ ───────────────────────────
+@app.post("/summarize-stream/")
+async def summarize_stream(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
-    filename = file.filename
-    upload_time = datetime.now(timezone.utc)
+    """
+    Streams progress tokens + final summary payload.
+    Ensures the DB connection is always returned to the pool to
+    avoid SAWarnings about unchecked-in connections.
+    """
+    file_bytes: bytes = await file.read()
+    filename: str = file.filename
 
-    # 1) Summarize -> returns Python list of {heading, summary} objects
-    result_list = await solicitation_service.summarize_document(file)
+    async def event_generator():
+        try:
+            # 1⃣  parsing
+            yield _sse("PARSING")
+            pseudo_upload = StarletteUploadFile(
+                filename=filename, file=BytesIO(file_bytes))
+            parsed_text = await parse_document(pseudo_upload)
 
-    if not result_list:
-        raise HTTPException(
-            status_code=400, detail="No summary generated from document."
-        )
+            # 2⃣  classification + summarisation
+            yield _sse("IDENTIFYING_RELEVANT_SECTIONS")
+            yield _sse("SUMMARIZING_SECTIONS")
+            result_list = await detect_headings_and_summarize_llm(
+                parsed_text, openai_api_key=OPENAI_API_KEY, debug=False
+            )
+            if not result_list:
+                raise HTTPException(400, "No summary generated")
 
-    # 2) Convert the Python list -> JSON string
-    result_json = json.dumps(result_list)
+            # 3⃣  DB storage
+            yield _sse("STORING_IN_DATABASE")
+            new_row = Summary(
+                filename=filename,
+                upload_time=datetime.now(timezone.utc),
+                summary=json.dumps(result_list),
+            )
+            db.add(new_row)
+            await db.commit()
+            await db.refresh(new_row)
 
-    # 3) Create & insert a new Summary row
-    new_summary = Summary(
-        filename=filename,
-        upload_time=upload_time,
-        summary=result_json
-    )
-    db.add(new_summary)
-    await db.commit()
-    await db.refresh(new_summary)
-
-    return {
-        "summaries": [
-            {
-                "id": new_summary.id,
-                "filename": filename,
-                "upload_time": upload_time,
-                "summary": result_list  # Return the original list
+            # 4⃣  final payload
+            payload = {
+                "id": new_row.id,
+                "filename": new_row.filename,
+                "upload_time": iso_utc(new_row.upload_time),
+                "summary": result_list,
             }
-        ]
-    }
+            yield _sse(json.dumps(payload))
+            yield _sse("COMPLETE")
+        finally:
+            # make sure pooled connection is returned
+            await db.close()
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+# ─────────────────────────── CRUD routes ───────────────────────────
 @app.get("/summaries/")
-async def get_summaries(
-    db: AsyncSession = Depends(get_db),
-    search: str = Query(None, description="Search by heading or content")
-):
+async def get_summaries(db: AsyncSession = Depends(get_db), search: str | None = None):
     query = select(Summary)
     if search:
         query = query.where(
             (Summary.filename.ilike(f"%{search}%")) |
             (Summary.summary.ilike(f"%{search}%"))
         )
+    res = await db.execute(query)
+    rows = res.scalars().all()
 
-    result = await db.execute(query)
-    summaries = result.scalars().all()
-
-    # Convert each summary (JSON string) back to a Python list/dict
     output = []
-    for s in summaries:
+    for r in rows:
         try:
-            summary_list = json.loads(s.summary)
+            summary_list = json.loads(r.summary)
         except json.JSONDecodeError:
-            summary_list = None
+            summary_list = r.summary
         output.append({
-            "id": s.id,
-            "filename": s.filename,
-            "upload_time": s.upload_time,
+            "id": r.id,
+            "filename": r.filename,
+            "upload_time": iso_utc(r.upload_time),
             "summary": summary_list,
         })
-
     return output
 
 
 @app.delete("/summaries/{summary_id}")
 async def delete_summary(summary_id: int, db: AsyncSession = Depends(get_db)):
-    query = select(Summary).where(Summary.id == summary_id)
-    result = await db.execute(query)
-    summary = result.scalars().first()
-    if not summary:
-        raise HTTPException(status_code=404, detail="Summary not found")
-
-    await db.delete(summary)
+    res = await db.execute(select(Summary).where(Summary.id == summary_id))
+    row = res.scalars().first()
+    if not row:
+        raise HTTPException(404, "Summary not found")
+    await db.delete(row)
     await db.commit()
     return {"message": "Summary deleted"}
 
 
 @app.get("/document-exists/{filename}")
 async def check_document_exists(filename: str, db: AsyncSession = Depends(get_db)):
-    query = select(Summary).where(Summary.filename == filename)
-    result = await db.execute(query)
-    existing_summary = result.scalars().first()
+    res = await db.execute(select(Summary).where(Summary.filename == filename))
+    row = res.scalars().first()
+    return {"exists": row is not None, "id": row.id if row else None}
 
-    return {
-        "exists": existing_summary is not None,
-        "id": existing_summary.id if existing_summary else None
-    }
 
+# ─────────────────────────── run (dev) ───────────────────────────
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

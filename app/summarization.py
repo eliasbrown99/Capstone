@@ -2,11 +2,8 @@ import re
 import asyncio
 from typing import List, Dict, Any
 
-# If you're using "langchain_openai" for ChatOpenAI:
-from langchain.chat_models import ChatOpenAI
-
-# Otherwise, if using the official LangChain package:
-# from langchain.chat_models import ChatOpenAI
+# ✅ modern import – no more deprecation warning
+from langchain_openai import ChatOpenAI
 
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.prompts import PromptTemplate
@@ -98,121 +95,10 @@ async def refine_headings_by_numbering(llm, lines: List[Dict[str, str]]) -> None
             # If not confirmed as a valid numbered heading, demote to body-text
             lines[idx]["class"] = "body-text"
 
-
-##############################################################################
-# (B) BUILD HIERARCHICAL STRUCTURE (UNUSED IN SOLUTION A, BUT LEFT INTACT)
-##############################################################################
-
-def build_hierarchical_structure(classified_lines: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-    """
-    [UNUSED in Solution A, but retained for compatibility]
-    Convert lines labeled heading-level-1..3 or body-text into a nested structure:
-       [
-         {
-           "title": <heading-level-1 text>,
-           "content": [],
-           "subsections": [ { ... }, ... ]
-         },
-         ...
-       ]
-    """
-    structured_doc = []
-    current_h1 = None
-    current_h2 = None
-    current_h3 = None
-
-    for item in classified_lines:
-        line_text = item["text"]
-        line_class = item["class"]
-
-        if line_class == "heading-level-1":
-            current_h1 = {
-                "title": line_text,
-                "content": [],
-                "subsections": []
-            }
-            structured_doc.append(current_h1)
-            current_h2 = None
-            current_h3 = None
-
-        elif line_class == "heading-level-2":
-            if current_h1 is None:
-                current_h1 = {
-                    "title": "Untitled Section",
-                    "content": [],
-                    "subsections": []
-                }
-                structured_doc.append(current_h1)
-            current_h2 = {
-                "title": line_text,
-                "content": [],
-                "subsections": []
-            }
-            current_h1["subsections"].append(current_h2)
-            current_h3 = None
-
-        elif line_class == "heading-level-3":
-            if current_h2 is None:
-                if current_h1 is None:
-                    current_h1 = {
-                        "title": "Untitled Section",
-                        "content": [],
-                        "subsections": []
-                    }
-                    structured_doc.append(current_h1)
-                current_h2 = {
-                    "title": "Untitled Subsection",
-                    "content": [],
-                    "subsections": []
-                }
-                current_h1["subsections"].append(current_h2)
-
-            current_h3 = {
-                "title": line_text,
-                "content": []
-            }
-            current_h2["subsections"].append(current_h3)
-
-        else:
-            # body-text
-            if current_h3 is not None:
-                current_h3["content"].append(line_text)
-            elif current_h2 is not None:
-                current_h2["content"].append(line_text)
-            elif current_h1 is not None:
-                current_h1["content"].append(line_text)
-            else:
-                current_h1 = {
-                    "title": "Untitled Section",
-                    "content": [line_text],
-                    "subsections": []
-                }
-                structured_doc.append(current_h1)
-
-    return structured_doc
-
-
-def gather_section_text(section: Dict[str, Any]) -> str:
-    """
-    [UNUSED in Solution A, but retained for compatibility]
-    Recursively gather all text in this section and its subsections.
-    Return as a single string.
-    """
-    texts = []
-    # Add top-level content
-    texts.extend(section["content"])
-
-    # Gather nested
-    if "subsections" in section:
-        for subsec in section["subsections"]:
-            texts.append(gather_section_text(subsec))
-
-    return "\n".join(texts)
-
-
 ##############################################################################
 # (B.2) BUILD A FLAT LIST OF SECTIONS (FOR SOLUTION A)
 ##############################################################################
+
 
 def build_flat_sections(lines_classified: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     """
@@ -531,39 +417,3 @@ async def detect_headings_and_summarize_llm(
             )
 
     return summarized_sections
-
-
-# ------------------------------------------------------------------------------
-# Usage Example (uncomment to run directly):
-#
-# if __name__ == "__main__":
-#     sample_document = \"\"\"# 1.0 INTRODUCTION
-# Acato is being considered for QA tasks...
-#
-# ## I. This Has Roman Numerals
-# Testing some roman numerals in the heading.
-#
-# ## ####### Actually The PDF Parser Might Output This Way
-# Possibly we want to see if it remains a heading anyway.
-#
-# # 2. Scope
-# This section outlines the scope of work for QA...
-# Some tasks are listed here...
-# - Task A
-# - Task B
-# - Task C
-# - Task D
-# - Task E
-# - Task F
-# \"\"\"
-#
-#     summaries = asyncio.run(
-#         detect_headings_and_summarize_llm(
-#             sample_document,
-#             openai_api_key="sk-YourOpenAIKey",
-#             debug=True
-#         )
-#     )
-#
-#     for s in summaries:
-#         print(f"HEADING: {s['heading']}\nSUMMARY:\n{s['summary']}\n")

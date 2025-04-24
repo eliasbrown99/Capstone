@@ -84,11 +84,3 @@ async def parse_document(file: UploadFile) -> str:
         raise HTTPException(status_code=500, detail=f"Parse error: {str(e)}")
     finally:
         os.remove(temp_path)
-
-
-# (Optional) If you want to debug by direct call:
-# if __name__ == "__main__":
-#     # Example usage
-#     # But typically, you won't run parse_document() directly;
-#     # it will be invoked via the SolicitationService in your FastAPI app.
-#     pass

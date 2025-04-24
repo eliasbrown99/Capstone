@@ -6,3 +6,7 @@ __pycache__/
 data/
 models/*.pkl
 .vscode/
+summaries.db
+parsed_output_1.md 
+parsed_output_2.md
+parsed_output.md
