@@ -11,3 +11,4 @@ parsed_output_1.md
 parsed_output_2.md
 parsed_output.md
 *.postman_collection.json
+app_debug/

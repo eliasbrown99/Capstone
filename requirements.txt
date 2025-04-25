@@ -3,6 +3,7 @@ fastapi==0.115.8
 uvicorn==0.34.0
 python-multipart==0.0.20
 
+aiosqlite
 SQLAlchemy==2.0.38
 greenlet==3.1.1
 
@@ -11,9 +12,10 @@ httpx-sse==0.4.0
 anyio==4.8.0
 h11==0.14.0
 
-langchain-core==0.3.51
+langchain
+langchain-core==0.3.51,<1.0.0
 langchain-text-splitters==0.3.8
-langchain-openai==0.1.6          # add (pin latest)
+langchain-openai>=0.1.11        # add (pin latest)
 langsmith==0.3.8
 
 llama-cloud==0.1.17
