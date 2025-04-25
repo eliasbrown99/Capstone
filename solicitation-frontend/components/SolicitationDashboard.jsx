@@ -1,3 +1,4 @@
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 import React, { useState, useEffect } from 'react';
 import {
     Upload,
@@ -121,8 +122,8 @@ const SolicitationDashboard = () => {
         setIsSearching(!!q);
         try {
             const url = q
-                ? `http://localhost:8000/summaries/?search=${encodeURIComponent(q)}`
-                : 'http://localhost:8000/summaries/';
+                ? `${API_BASE}/summaries/?search=${encodeURIComponent(q)}`
+                : `${API_BASE}/summaries/`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('Failed to fetch summaries');
             const data = await res.json();
@@ -140,7 +141,7 @@ const SolicitationDashboard = () => {
 
     const checkIfDocumentExists = async (filename) => {
         try {
-            const res = await fetch(`http://localhost:8000/document-exists/${encodeURIComponent(filename)}`);
+            const res = await fetch(`${API_BASE}document-exists/${encodeURIComponent(filename)}`);
             if (!res.ok) return { exists: false };
             return await res.json();
         } catch {
@@ -156,7 +157,7 @@ const SolicitationDashboard = () => {
         const formData = new FormData();
         formData.append('file', file);
 
-        const res = await fetch('http://localhost:8000/summarize-stream/', { method: 'POST', body: formData });
+        const res = await fetch(`${API_BASE}/summarize-stream/`, { method: 'POST', body: formData });
         if (!res.ok) {
             setError('Summarization failed');
             setPhase('');
@@ -215,7 +216,7 @@ const SolicitationDashboard = () => {
                 message={`Are you sure you want to permanently delete “${deleteTarget?.filename}”?`}
                 onCancel={() => setDeleteTarget(null)}
                 onConfirm={async () => {
-                    await fetch(`http://localhost:8000/summaries/${deleteTarget.id}`, { method: 'DELETE' });
+                    await fetch(`${API_BASE}/summaries/${deleteTarget.id}`, { method: 'DELETE' });
                     setSummaries((p) => p.filter((x) => x.id !== deleteTarget.id));
                     setOpenSummaries((p) => p.filter((x) => x.id !== deleteTarget.id));
                     if (view === deleteTarget.id) setView('database');
