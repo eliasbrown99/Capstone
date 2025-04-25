@@ -15,7 +15,7 @@ This is a first try at a comprehensive solution to help Acato Information Manage
 ## System Requirements
 
 ### Backend (FastAPI)
-- **Python 3.11.8** (or higher)
+- **Python 3.11.8**
 - **Pip** (Python package manager)
 - **Virtual Environment** (venv)
 
@@ -43,7 +43,7 @@ cd Capstone
 __Create a Virtual Environment:__
 
 ```bash
-python -m venv venv
+py -3.11 -m venv venv
 ```
 __Activate the Virtual Environment:__
 
@@ -67,6 +67,10 @@ __Activate the Virtual Environment:__
 __Install Python Dependencies:__
 
 With the virtual environment activated, run:
+
+```bash
+pip -m pip install --upgrade pip setuptools wheel
+```
 ```bash
 pip install -r requirements.txt
 ```
@@ -107,17 +111,20 @@ npm install
 ```
 ### 5. Create the .env file
 
-Create a file named ```.env``` in the root directory ```Capstone``` of the project (the same one containing ```requirements.txt``` and ```SolicitationClassification.py```). You can do this manually or cd into the directory and use 
-
+Create a file named ```.env``` in the root directory ```Capstone``` of the project (the same one containing ```requirements.txt```). You can do this manually or cd into the directory and use 
+* __macOS/Linux:__
 ```bash
 touch .env
 ```
-Inside ```.env```, add your OpenAI API key (request it from Elias):
+* __Windows (PowerShell):__
+```powershell
+New-Item  ".env" -ItemType File
+```
+Inside ```.env```, add your OpenAI API key and Llama Cloud API Key:
 
 ```bash
 OPEN_API_KEY=sk-xxxxx
-MODEL_PATH=./models
-DATA_PATH=./data
+LLAMA_CLOUD_API_KEY=llx-xxxxx
 ```
 
 ## Running the Applicatoins
@@ -143,9 +150,6 @@ _Tip:_ Opening two terminal windows - one for the backend and one for the fronte
 ```bash
 .
 ├── app/                     # Application logic (controllers, services)
-├── config/                  # Configuration files
-├── data/                    # Data files (CSVs, seeds, etc.)
-├── models/                  # Database models or ORM files
 ├── solicitation-frontend/   # React/Next.js frontend
 │   ├── components/
 │   │   ├── SolicitationDashboard.jsx
@@ -165,15 +169,12 @@ _Tip:_ Opening two terminal windows - one for the backend and one for the fronte
 │   └── tailwind.config.mjs
 ├── venv/                    # Python virtual environment (local)
 ├── .env                     # Environment variables for Python/Node
-├── .gitattributes
 ├── .gitignore
-├── requirements.txt         # Python dependencies
-└── SolicitationClassification.py  # FastAPI application entry point
+└── requirements.txt         # Python dependencies
 ```
 ## Usage
 * __Backend:__
-  * Run the FastAPI server using uvicorn or by running ```SolicitationClassification.py``` directly.
-  * Use the endpoints defined in ```SolicitationClassification.py```for document classifcation.
+  * Run the FastAPI server using uvicorn or by running ```main.py``` directly.
 
 * __Frontend:__
   * Interact with the application via browser at http://localhost:3000.
